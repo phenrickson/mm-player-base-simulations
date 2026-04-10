@@ -1,16 +1,18 @@
 """Churn: daily per-player quit probability driven by recent experience.
 
-Quit probability is a linear combination of four signals:
+Quit probability is a combination of four signals:
 
     baseline
-    + loss_weight * recent_loss_rate         (any loss)
+    + loss_weight * recent_loss_rate^2       (squared — streaks hurt)
     + blowout_loss_weight * recent_blowout_rate
     + win_streak_weight * recent_win_rate    (negative = wins make you stick)
 
-The two loss-driven terms are scaled by a new-player sensitivity
-multiplier so players who have played very few matches get hit harder
-by losses than veterans. Skill itself is never an input — churn emerges
-from what matches the player got and how they did in them.
+The loss term is squared so a 50% loss rate barely registers (0.25 of
+the linear value) but a 100% loss rate feels catastrophic. The two
+loss-driven terms are scaled by a new-player sensitivity multiplier so
+players who have played very few matches get hit harder by losses than
+veterans. Skill itself is never an input — churn emerges from what
+matches the player got and how they did in them.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ def apply_churn(
     newness = np.clip(1.0 - pop.matches_played.astype(np.float32) / threshold, 0.0, 1.0)
     sensitivity = (1.0 + cfg.new_player_bonus * newness).astype(np.float32)
 
-    loss_term = cfg.loss_weight * loss_rate
+    loss_term = cfg.loss_weight * (loss_rate ** 2)
     blowout_term = cfg.blowout_loss_weight * blowout_rate
 
     quit_prob = np.clip(
