@@ -1,6 +1,10 @@
 _default:
     @just --list
 
+# install dependencies and build the local .venv
+setup:
+    uv sync
+
 # run the full test suite
 test:
     uv run pytest
