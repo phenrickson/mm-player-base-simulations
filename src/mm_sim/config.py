@@ -89,8 +89,10 @@ class GearConfig(BaseModel):
 
 
 class SimulationConfig(BaseModel):
-    seed: int = 0
+    seed: int = 1999
     season_days: int = Field(90, gt=0)
+    # Store full per-player snapshots this often. 1 = every day.
+    population_snapshot_every_n_days: int = Field(1, gt=0)
     population: PopulationConfig = Field(default_factory=PopulationConfig)
     parties: PartyConfig = Field(default_factory=PartyConfig)
     matchmaker: MatchmakerConfig = Field(default_factory=MatchmakerConfig)

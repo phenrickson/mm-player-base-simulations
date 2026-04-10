@@ -16,3 +16,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Experiment artifacts
+experiments/

@@ -71,9 +71,14 @@ class SimulationEngine:
         self.snapshot_writer = DailySnapshotWriter()
 
     def run(self) -> pl.DataFrame:
+        """Run the full season. Returns the aggregate daily snapshot.
+
+        For full per-player snapshots use `run_with_population_snapshots`
+        (or just read `self.snapshot_writer.population_dataframe()` after).
+        """
         for day in range(self.cfg.season_days):
             self._tick(day)
-        return self.snapshot_writer.to_dataframe()
+        return self.snapshot_writer.aggregate_dataframe()
 
     def _tick(self, day: int) -> None:
         day_rng = spawn_child(self.master_rng, f"day_{day}")
@@ -171,9 +176,11 @@ class SimulationEngine:
             for offset, nid in enumerate(new_ids):
                 self.population.party_id[nid] = next_pid + offset
 
-        self.snapshot_writer.record(
+        self.snapshot_writer.record_aggregate(
             day=day,
             pop=self.population,
             matches_today=matches_today,
             blowouts_today=blowouts_today,
         )
+        if day % self.cfg.population_snapshot_every_n_days == 0:
+            self.snapshot_writer.record_population(day=day, pop=self.population)
