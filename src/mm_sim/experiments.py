@@ -35,6 +35,7 @@ DEFAULT_EXPERIMENTS_DIR = Path("experiments")
 @dataclass
 class ExperimentMetadata:
     name: str
+    version: str  # "v1", "v2", ...
     hypothesis: str | None
     created_at: str
     elapsed_seconds: float
@@ -46,6 +47,7 @@ class ExperimentMetadata:
     def to_dict(self) -> dict:
         return {
             "name": self.name,
+            "version": self.version,
             "hypothesis": self.hypothesis,
             "created_at": self.created_at,
             "elapsed_seconds": self.elapsed_seconds,
@@ -92,18 +94,45 @@ def _auto_name(cfg: SimulationConfig) -> str:
     return f"{date}_{mm_kind}"
 
 
-def _resolve_experiment_dir(base: Path, name: str) -> tuple[Path, str]:
-    """Return a non-colliding directory path. Appends _v2, _v3, ... if needed."""
-    candidate = base / name
+def _next_version_dir(base: Path, name: str) -> tuple[Path, str]:
+    """Return (path, version_label) for the next un-used version of an
+    experiment. Layout is `<base>/<name>/v<N>/`."""
+    name_dir = base / name
+    name_dir.mkdir(parents=True, exist_ok=True)
+    existing = sorted(
+        int(p.name[1:])
+        for p in name_dir.iterdir()
+        if p.is_dir() and p.name.startswith("v") and p.name[1:].isdigit()
+    )
+    next_n = (existing[-1] + 1) if existing else 1
+    version = f"v{next_n}"
+    return name_dir / version, version
+
+
+def _latest_version_dir(base: Path, name: str) -> Path:
+    name_dir = base / name
+    if not name_dir.exists():
+        raise FileNotFoundError(f"experiment not found: {name_dir}")
+    versions = sorted(
+        (int(p.name[1:]), p)
+        for p in name_dir.iterdir()
+        if p.is_dir() and p.name.startswith("v") and p.name[1:].isdigit()
+    )
+    if not versions:
+        raise FileNotFoundError(f"no versions under {name_dir}")
+    return versions[-1][1]
+
+
+def _resolve_version_dir(base: Path, name: str, version: str | None) -> Path:
+    name_dir = base / name
+    if not name_dir.exists():
+        raise FileNotFoundError(f"experiment not found: {name_dir}")
+    if version is None:
+        return _latest_version_dir(base, name)
+    candidate = name_dir / version
     if not candidate.exists():
-        return candidate, name
-    version = 2
-    while True:
-        versioned_name = f"{name}_v{version}"
-        candidate = base / versioned_name
-        if not candidate.exists():
-            return candidate, versioned_name
-        version += 1
+        raise FileNotFoundError(f"version not found: {candidate}")
+    return candidate
 
 
 class ExperimentRunner:
@@ -123,10 +152,10 @@ class ExperimentRunner:
     ) -> Experiment:
         resolved_name = name or _auto_name(cfg)
         self.experiments_dir.mkdir(parents=True, exist_ok=True)
-        exp_dir, final_name = _resolve_experiment_dir(
+        version_dir, version = _next_version_dir(
             self.experiments_dir, resolved_name
         )
-        exp_dir.mkdir(parents=True, exist_ok=False)
+        version_dir.mkdir(parents=True, exist_ok=False)
 
         t0 = time.time()
         engine = SimulationEngine(cfg)
@@ -140,7 +169,8 @@ class ExperimentRunner:
         )
 
         metadata = ExperimentMetadata(
-            name=final_name,
+            name=resolved_name,
+            version=version,
             hypothesis=hypothesis,
             created_at=datetime.now(timezone.utc).isoformat(),
             elapsed_seconds=round(elapsed, 3),
@@ -150,14 +180,14 @@ class ExperimentRunner:
             season_days=cfg.season_days,
         )
 
-        _write_experiment(exp_dir, metadata, cfg, aggregate, population)
+        _write_experiment(version_dir, metadata, cfg, aggregate, population)
 
         if population is not None:
             generate_plots(
                 population=population,
                 aggregate=aggregate,
-                out_dir=exp_dir / "plots",
-                experiment_name=final_name,
+                out_dir=version_dir / "plots",
+                experiment_name=f"{resolved_name}/{version}",
             )
 
         return Experiment(
@@ -185,15 +215,22 @@ def _write_experiment(
 
 
 def load_experiment(
-    name: str, experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR
+    name: str,
+    version: str | None = None,
+    experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
 ) -> Experiment:
-    exp_dir = Path(experiments_dir) / name
-    if not exp_dir.exists():
-        raise FileNotFoundError(f"experiment not found: {exp_dir}")
-    metadata = ExperimentMetadata(**json.loads((exp_dir / "metadata.json").read_text()))
-    cfg = SimulationConfig.model_validate_json((exp_dir / "config.json").read_text())
-    aggregate = pl.read_parquet(exp_dir / "aggregate.parquet")
-    pop_path = exp_dir / "population.parquet"
+    """Load an experiment by name. If `version` is None, loads the latest
+    version. Pass `version="v2"` to load a specific version."""
+    base = Path(experiments_dir)
+    version_dir = _resolve_version_dir(base, name, version)
+    metadata = ExperimentMetadata(
+        **json.loads((version_dir / "metadata.json").read_text())
+    )
+    cfg = SimulationConfig.model_validate_json(
+        (version_dir / "config.json").read_text()
+    )
+    aggregate = pl.read_parquet(version_dir / "aggregate.parquet")
+    pop_path = version_dir / "population.parquet"
     population = pl.read_parquet(pop_path) if pop_path.exists() else None
     return Experiment(
         metadata=metadata, config=cfg, aggregate=aggregate, population=population
@@ -203,37 +240,42 @@ def load_experiment(
 def list_experiments(
     experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
 ) -> pl.DataFrame:
+    """One row per version. Columns: name, version, created_at, ..."""
     base = Path(experiments_dir)
     if not base.exists():
         return pl.DataFrame()
     rows: list[dict] = []
-    for exp_dir in sorted(base.iterdir()):
-        meta_path = exp_dir / "metadata.json"
-        if not meta_path.exists():
+    for name_dir in sorted(base.iterdir()):
+        if not name_dir.is_dir():
             continue
-        meta = json.loads(meta_path.read_text())
-        agg_path = exp_dir / "aggregate.parquet"
-        final_active = None
-        final_blowouts = None
-        if agg_path.exists():
-            agg = pl.read_parquet(agg_path)
-            if agg.height > 0:
-                last = agg.sort("day").tail(1).row(0, named=True)
-                final_active = last["active_count"]
-                final_blowouts = last["blowouts"]
-        rows.append(
-            {
-                "name": meta["name"],
-                "created_at": meta["created_at"],
-                "seed": meta.get("seed"),
-                "season_days": meta.get("season_days"),
-                "elapsed_seconds": meta.get("elapsed_seconds"),
-                "final_active_count": final_active,
-                "final_day_blowouts": final_blowouts,
-                "git_sha": (meta.get("git_sha") or "")[:8],
-                "hypothesis": meta.get("hypothesis"),
-            }
-        )
+        for version_dir in sorted(name_dir.iterdir()):
+            meta_path = version_dir / "metadata.json"
+            if not meta_path.exists():
+                continue
+            meta = json.loads(meta_path.read_text())
+            agg_path = version_dir / "aggregate.parquet"
+            final_active = None
+            final_blowouts = None
+            if agg_path.exists():
+                agg = pl.read_parquet(agg_path)
+                if agg.height > 0:
+                    last = agg.sort("day").tail(1).row(0, named=True)
+                    final_active = last["active_count"]
+                    final_blowouts = last["blowouts"]
+            rows.append(
+                {
+                    "name": meta["name"],
+                    "version": meta.get("version", version_dir.name),
+                    "created_at": meta["created_at"],
+                    "seed": meta.get("seed"),
+                    "season_days": meta.get("season_days"),
+                    "elapsed_seconds": meta.get("elapsed_seconds"),
+                    "final_active_count": final_active,
+                    "final_day_blowouts": final_blowouts,
+                    "git_sha": (meta.get("git_sha") or "")[:8],
+                    "hypothesis": meta.get("hypothesis"),
+                }
+            )
     return pl.DataFrame(rows)
 
 
@@ -241,9 +283,15 @@ def compare_experiments(
     names: list[str],
     experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
 ) -> pl.DataFrame:
-    """Stack the aggregate DataFrames of several experiments with a `name` col."""
+    """Stack the aggregate DataFrames of several experiments (latest version
+    of each) with `experiment` and `version` columns."""
     frames: list[pl.DataFrame] = []
     for name in names:
-        exp = load_experiment(name, experiments_dir)
-        frames.append(exp.aggregate.with_columns(pl.lit(name).alias("experiment")))
+        exp = load_experiment(name, experiments_dir=experiments_dir)
+        frames.append(
+            exp.aggregate.with_columns(
+                pl.lit(name).alias("experiment"),
+                pl.lit(exp.metadata.version).alias("version"),
+            )
+        )
     return pl.concat(frames)

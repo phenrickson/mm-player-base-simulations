@@ -130,19 +130,41 @@ def _pick_checkpoint_days(aggregate: pl.DataFrame) -> list[int]:
 def _plot_skill_distribution_intervals(
     ax, population: pl.DataFrame, checkpoint_days: list[int]
 ) -> None:
-    """Overlapping density-style histograms of active-player true_skill at
-    each checkpoint day."""
+    """Overlapping histograms of active-player observed_skill at each
+    checkpoint day, with the (constant) true_skill distribution as a dashed
+    reference line. Tells you how well the rating system is converging."""
     colors = plt.cm.viridis(np.linspace(0.15, 0.95, max(len(checkpoint_days), 1)))
-    x_all = population.filter(pl.col("active"))["true_skill"].to_numpy()
-    if x_all.size == 0:
+    active_all = population.filter(pl.col("active"))
+    if active_all.height == 0:
         ax.text(0.5, 0.5, "no active players", ha="center", va="center")
         return
-    bins = np.linspace(float(x_all.min()) - 0.1, float(x_all.max()) + 0.1, 40)
+
+    obs_all = active_all["observed_skill"].to_numpy()
+    true_all = active_all["true_skill"].to_numpy()
+    lo = float(min(obs_all.min(), true_all.min())) - 0.1
+    hi = float(max(obs_all.max(), true_all.max())) + 0.1
+    bins = np.linspace(lo, hi, 40)
+
+    # Reference: the true_skill distribution of day-0 active players
+    day0_true = population.filter(
+        (pl.col("day") == 0) & pl.col("active")
+    )["true_skill"].to_numpy()
+    if day0_true.size > 0:
+        ax.hist(
+            day0_true,
+            bins=bins,
+            density=True,
+            histtype="step",
+            linewidth=2,
+            linestyle="--",
+            color="black",
+            label="true_skill (day 0, reference)",
+        )
 
     for color, day in zip(colors, checkpoint_days):
         day_slice = population.filter(
             (pl.col("day") == day) & pl.col("active")
-        )["true_skill"].to_numpy()
+        )["observed_skill"].to_numpy()
         if day_slice.size == 0:
             continue
         ax.hist(
@@ -152,11 +174,11 @@ def _plot_skill_distribution_intervals(
             histtype="step",
             linewidth=2,
             color=color,
-            label=f"day {day} (n={day_slice.size})",
+            label=f"obs day {day} (n={day_slice.size})",
         )
-    ax.set_xlabel("true_skill")
+    ax.set_xlabel("skill rating")
     ax.set_ylabel("density")
-    ax.legend(fontsize=8, loc="upper right")
+    ax.legend(fontsize=7, loc="upper right")
     ax.grid(True, alpha=0.3)
 
 
@@ -258,19 +280,23 @@ def _plot_retention_by_skill_decile(ax, population: pl.DataFrame) -> None:
     ax.legend(fontsize=7, loc="lower left", ncol=2, title="day-0 skill decile")
 
 
-def generate_plots_for_experiment_dir(exp_dir: Path) -> list[Path]:
-    """Regenerate plots for an already-saved experiment directory."""
-    aggregate = pl.read_parquet(exp_dir / "aggregate.parquet")
-    pop_path = exp_dir / "population.parquet"
+def generate_plots_for_experiment_dir(version_dir: Path) -> list[Path]:
+    """Regenerate plots for an already-saved experiment version directory.
+
+    `version_dir` points at e.g. `experiments/skill_only/v1/`.
+    """
+    aggregate = pl.read_parquet(version_dir / "aggregate.parquet")
+    pop_path = version_dir / "population.parquet"
     if not pop_path.exists():
         raise FileNotFoundError(
-            f"population.parquet not found in {exp_dir}; "
+            f"population.parquet not found in {version_dir}; "
             "can't generate plots without per-day population snapshots"
         )
     population = pl.read_parquet(pop_path)
+    label = f"{version_dir.parent.name}/{version_dir.name}"
     return generate_plots(
         population=population,
         aggregate=aggregate,
-        out_dir=exp_dir / "plots",
-        experiment_name=exp_dir.name,
+        out_dir=version_dir / "plots",
+        experiment_name=label,
     )

@@ -18,7 +18,6 @@ season_days = 30
 
 [config.population]
 initial_size = 5000
-daily_new_players = 50
 
 [config.parties]
 size_distribution = {1 = 1.0}

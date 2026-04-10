@@ -12,7 +12,7 @@ class PopulationConfig(BaseModel):
     )
     true_skill_mean: float = 0.0
     true_skill_std: float = 1.0
-    daily_new_players: int = Field(200, ge=0)
+    daily_new_players: int = Field(0, ge=0)
     starting_observed_skill: float = 0.0
     starting_experience: float = 0.0
     starting_gear: float = 0.0
