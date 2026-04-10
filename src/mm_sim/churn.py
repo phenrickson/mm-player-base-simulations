@@ -1,7 +1,16 @@
 """Churn: daily per-player quit probability driven by recent experience.
 
-Making churn a function of recent experience (rather than a flat rate) is
-what lets the Activision feedback loop emerge in the simulation.
+Quit probability is a linear combination of four signals:
+
+    baseline
+    + loss_weight * recent_loss_rate         (any loss)
+    + blowout_loss_weight * recent_blowout_rate
+    + win_streak_weight * recent_win_rate    (negative = wins make you stick)
+
+The two loss-driven terms are scaled by a new-player sensitivity
+multiplier so players who have played very few matches get hit harder
+by losses than veterans. Skill itself is never an input — churn emerges
+from what matches the player got and how they did in them.
 """
 
 from __future__ import annotations
@@ -16,12 +25,22 @@ def apply_churn(
     pop: Population, cfg: ChurnConfig, rng: np.random.Generator
 ) -> None:
     window = float(cfg.rolling_window)
+    loss_rate = pop.recent_losses.astype(np.float32) / window
     blowout_rate = pop.recent_blowout_losses.astype(np.float32) / window
     win_rate = pop.recent_wins.astype(np.float32) / window
 
+    # New-player sensitivity: 1 + bonus * max(0, 1 - matches/threshold)
+    # Veterans (matches >= threshold) get a 1x multiplier.
+    threshold = float(cfg.new_player_threshold)
+    newness = np.clip(1.0 - pop.matches_played.astype(np.float32) / threshold, 0.0, 1.0)
+    sensitivity = (1.0 + cfg.new_player_bonus * newness).astype(np.float32)
+
+    loss_term = cfg.loss_weight * loss_rate
+    blowout_term = cfg.blowout_loss_weight * blowout_rate
+
     quit_prob = np.clip(
         cfg.baseline_daily_quit_prob
-        + cfg.blowout_loss_weight * blowout_rate
+        + sensitivity * (loss_term + blowout_term)
         + cfg.win_streak_weight * win_rate,
         0.0,
         cfg.max_daily_quit_prob,

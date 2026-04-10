@@ -1,8 +1,8 @@
 # Scenarios
 
-Research recipes for the matchmaking simulation. Each `.toml` file is a
-named configuration with an attached hypothesis. Running a scenario
-produces an experiment in `../experiments/` via the experiment tracker.
+Named configurations for the matchmaking simulation. Each `.toml` file
+is one scenario. Running a scenario produces an experiment in
+`../experiments/` via the experiment tracker.
 
 ## Running scenarios
 
@@ -24,10 +24,6 @@ experiment tracker auto-versions them (`skill_only`, `skill_only_v2`, ...).
 
 ```toml
 name = "scenario_name"
-hypothesis = """
-What you expect to happen and why. This is saved into the experiment's
-metadata.json so future-you knows what past-you was testing.
-"""
 
 [config]
 seed = 1999
@@ -55,8 +51,7 @@ everything else falls through to the defaults in `src/mm_sim/config.py`.
 
 1. Copy an existing `.toml` file to a new name
 2. Edit `name` to match the filename (without `.toml`)
-3. Write a hypothesis — what are you testing? What do you expect?
-4. Override the config fields that matter for your experiment
-5. Run `just scenario <name>`
-6. Inspect with `just experiment <name>` or load it in Python with
+3. Override the config fields that matter for your experiment
+4. Run `just scenario <name>`
+5. Inspect with `just experiment <name>` or load it in Python with
    `from mm_sim.experiments import load_experiment`

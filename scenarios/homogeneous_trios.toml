@@ -1,28 +1,4 @@
 name = "homogeneous_trios"
-hypothesis = """
-Skill-based MM but parties are trios that cluster strongly by skill
-(skill_homogeneity=1.0). This tests the core party-stacking question
-from thoughts.md: what happens when high-skill players queue together
-as a trio, forcing the matchmaker to find opponents for the whole group?
-
-Because parties are atomic to the matchmaker, a homogeneous high-skill
-trio must be placed in a lobby with its own skill window. If there
-aren't enough similarly-skilled other parties, the matchmaker will loosen
-tolerance and mix in lower-skilled parties — producing the blowouts
-that drive churn.
-
-Expected: party stacking should produce more blowouts than `skill_only`
-(which is identical but solo-only), because the grouping constraint
-degrades match quality even when each individual player's skill is
-known perfectly.
-"""
-
-[config]
-seed = 1999
-season_days = 30
-
-[config.population]
-initial_size = 5000
 
 [config.parties]
 size_distribution = {3 = 1.0}
@@ -31,11 +7,3 @@ skill_homogeneity = 1.0
 [config.matchmaker]
 kind = "composite"
 composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
-
-[config.churn]
-baseline_daily_quit_prob = 0.002
-blowout_loss_weight = 0.15
-win_streak_weight = -0.02
-
-[config.frequency]
-mean_matches_per_day = 4.0

@@ -74,22 +74,28 @@ class DailySnapshotWriter:
 
     def record_population(self, day: int, pop: Population) -> None:
         """Append a full per-player snapshot for this day (all players, incl.
-        churned, so departed-player analysis is possible)."""
+        churned, so departed-player analysis is possible).
+
+        Every mutable array is copied: polars stores numpy arrays by
+        reference, so without copies later in-place mutations would
+        retroactively change earlier snapshots.
+        """
         n = pop.size
         df = pl.DataFrame(
             {
                 "day": np.full(n, day, dtype=np.int32),
                 "player_id": np.arange(n, dtype=np.int32),
-                "true_skill": pop.true_skill,
-                "observed_skill": pop.observed_skill,
-                "experience": pop.experience,
-                "gear": pop.gear,
-                "active": pop.active,
-                "party_id": pop.party_id,
-                "matches_played": pop.matches_played,
+                "true_skill": pop.true_skill.copy(),
+                "observed_skill": pop.observed_skill.copy(),
+                "experience": pop.experience.copy(),
+                "gear": pop.gear.copy(),
+                "active": pop.active.copy(),
+                "party_id": pop.party_id.copy(),
+                "matches_played": pop.matches_played.copy(),
                 "recent_wins": pop.recent_wins.astype(np.int16),
+                "recent_losses": pop.recent_losses.astype(np.int16),
                 "recent_blowout_losses": pop.recent_blowout_losses.astype(np.int16),
-                "join_day": pop.join_day,
+                "join_day": pop.join_day.copy(),
             }
         )
         self._pop_frames.append(df)

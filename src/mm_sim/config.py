@@ -70,10 +70,16 @@ class RatingUpdaterConfig(BaseModel):
 
 class ChurnConfig(BaseModel):
     baseline_daily_quit_prob: float = 0.005
+    loss_weight: float = 0.05
     blowout_loss_weight: float = 0.08
     win_streak_weight: float = -0.02
     rolling_window: int = 5
     max_daily_quit_prob: float = 0.5
+    # New-player sensitivity: loss-driven churn terms get multiplied by
+    # (1 + new_player_bonus * (1 - matches_played / new_player_threshold))
+    # clipped so veterans (matches_played >= threshold) get a 1x multiplier.
+    new_player_bonus: float = 1.0
+    new_player_threshold: int = Field(20, gt=0)
 
 
 class FrequencyConfig(BaseModel):

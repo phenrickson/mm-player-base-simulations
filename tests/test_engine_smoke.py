@@ -14,8 +14,9 @@ def test_short_season_runs_end_to_end():
     )
     df = SimulationEngine(cfg).run()
     assert isinstance(df, pl.DataFrame)
-    assert df.height == 5
-    assert df["day"].to_list() == [0, 1, 2, 3, 4]
+    # Day 0 pristine snapshot + 5 ticked days = 6 rows
+    assert df.height == 6
+    assert df["day"].to_list() == [0, 1, 2, 3, 4, 5]
     assert df["active_count"][0] > 0
     assert df["matches_played"].sum() > 0
 

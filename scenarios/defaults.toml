@@ -1,0 +1,35 @@
+# Shared defaults for every scenario in this directory. Individual
+# scenario files can override any of these by setting the same key.
+# This file is not itself a scenario (no `name` field).
+#
+# `season` names the grouping under experiments/. All scenarios run
+# against this defaults file land in experiments/<season>/<scenario>/vN/.
+# Change this when you start a new research session with different
+# base settings so results don't get mixed with older runs.
+season = "baseline-90day-asymmetric"
+
+[config]
+seed = 1999
+season_days = 90
+
+[config.population]
+initial_size = 15000
+true_skill_distribution = "right_skewed"
+# Daily arrivals. Below break-even against typical churn so population
+# still declines over the season, but high enough that the "new player"
+# bucket stays populated all season. Set to 0 for a closed-cohort study.
+daily_new_players = 100
+
+[config.frequency]
+mean_matches_per_day = 5.0
+
+[config.churn]
+baseline_daily_quit_prob = 0.0015
+loss_weight = 0.025
+blowout_loss_weight = 0.1
+win_streak_weight = -0.02
+# New-player loss sensitivity: a player with 0 matches_played gets
+# (1 + new_player_bonus)x the loss/blowout impact; it ramps linearly
+# down to 1x at new_player_threshold matches.
+new_player_bonus =0.5
+new_player_threshold = 20

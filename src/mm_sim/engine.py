@@ -7,6 +7,8 @@ This module just wires them together and runs the loop.
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import polars as pl
 
@@ -54,8 +56,11 @@ def _make_rating_updater(cfg: SimulationConfig) -> RatingUpdater:
 
 
 class SimulationEngine:
-    def __init__(self, cfg: SimulationConfig) -> None:
+    def __init__(
+        self, cfg: SimulationConfig, *, progress_label: str | None = None
+    ) -> None:
         self.cfg = cfg
+        self.progress_label = progress_label
         self.master_rng = make_rng(cfg.seed)
         self.population = Population.create_initial(
             cfg.population, spawn_child(self.master_rng, "population_init")
@@ -73,12 +78,35 @@ class SimulationEngine:
     def run(self) -> pl.DataFrame:
         """Run the full season. Returns the aggregate daily snapshot.
 
-        For full per-player snapshots use `run_with_population_snapshots`
-        (or just read `self.snapshot_writer.population_dataframe()` after).
+        A pristine day-0 snapshot (pre-matches) is recorded first so the
+        initial observed_skill state is preserved. Then day 1..season_days
+        are the simulated ticks.
         """
-        for day in range(self.cfg.season_days):
+        self.snapshot_writer.record_aggregate(
+            day=0, pop=self.population, matches_today=0, blowouts_today=0
+        )
+        self.snapshot_writer.record_population(day=0, pop=self.population)
+        total = self.cfg.season_days
+        for day in range(1, total + 1):
             self._tick(day)
+            self._emit_progress(day, total)
+        self._finish_progress()
         return self.snapshot_writer.aggregate_dataframe()
+
+    def _emit_progress(self, day: int, total: int) -> None:
+        if self.progress_label is None or not sys.stdout.isatty():
+            return
+        pct = int(day * 100 / total)
+        sys.stdout.write(
+            f"\r  {self.progress_label}: day {day}/{total} ({pct}%)"
+        )
+        sys.stdout.flush()
+
+    def _finish_progress(self) -> None:
+        if self.progress_label is None or not sys.stdout.isatty():
+            return
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
     def _tick(self, day: int) -> None:
         day_rng = spawn_child(self.master_rng, f"day_{day}")
@@ -89,6 +117,7 @@ class SimulationEngine:
 
         total_matches = np.zeros_like(matches_per_player)
         total_wins = np.zeros_like(matches_per_player)
+        total_losses = np.zeros_like(matches_per_player)
         total_blowout_losses = np.zeros_like(matches_per_player)
 
         matches_today = 0
@@ -126,17 +155,21 @@ class SimulationEngine:
                     lobby.teams[result.winning_team], dtype=np.int32
                 )
                 total_wins[winning_team_ids] += 1
-                if result.is_blowout:
-                    for team_idx, team in enumerate(lobby.teams):
-                        if team_idx != result.winning_team:
-                            total_blowout_losses[
-                                np.array(team, dtype=np.int32)
-                            ] += 1
+                for team_idx, team in enumerate(lobby.teams):
+                    if team_idx == result.winning_team:
+                        continue
+                    losing_team_ids = np.array(team, dtype=np.int32)
+                    total_losses[losing_team_ids] += 1
+                    if result.is_blowout:
+                        total_blowout_losses[losing_team_ids] += 1
 
         # Update rolling windows (last-tick values)
         window = self.cfg.churn.rolling_window
         self.population.recent_wins = np.clip(
             total_wins, 0, window
+        ).astype(np.int8)
+        self.population.recent_losses = np.clip(
+            total_losses, 0, window
         ).astype(np.int8)
         self.population.recent_blowout_losses = np.clip(
             total_blowout_losses, 0, window

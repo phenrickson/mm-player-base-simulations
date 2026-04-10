@@ -1,34 +1,7 @@
 name = "random_mm"
-hypothesis = """
-No matchmaking at all. The RandomMatchmaker shuffles parties and packs
-them into lobbies with no skill/experience/gear consideration. This is
-the absolute floor of match quality.
-
-Compared to `experience_only`, this removes even the weak experience
-signal. If the feedback loop shows up here but not in `experience_only`,
-it means experience-based MM is *worse* than random (because it gives
-the illusion of structure while stacking unlike skills). If the feedback
-loop shows up in both equally, experience-based MM is effectively random
-for this population.
-"""
-
-[config]
-seed = 1999
-season_days = 30
-
-[config.population]
-initial_size = 5000
 
 [config.parties]
 size_distribution = {1 = 1.0}
 
 [config.matchmaker]
 kind = "random"
-
-[config.churn]
-baseline_daily_quit_prob = 0.002
-blowout_loss_weight = 0.15
-win_streak_weight = -0.02
-
-[config.frequency]
-mean_matches_per_day = 4.0

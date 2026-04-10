@@ -1,34 +1,5 @@
 name = "experience_only"
-hypothesis = """
-Level-based matchmaking: matchmaker uses experience (time played) as the
-only rating signal, ignoring skill entirely. Because experience starts near
-zero for everyone and grows slowly, early matches will be essentially random
-w.r.t. skill, producing high-variance outcomes and lots of blowouts.
-
-Expected: this is where the feedback loop should emerge. Low-skill players
-who get matched against high-skill players (because both have similar
-experience values) should get stomped, trigger blowout-driven churn, and
-the active-population skill mean should drift upward over the season.
-"""
-
-[config]
-seed = 1999
-season_days = 30
-
-[config.population]
-initial_size = 5000
-
-[config.parties]
-size_distribution = {1 = 1.0}
 
 [config.matchmaker]
 kind = "composite"
 composite_weights = {skill = 0.0, experience = 1.0, gear = 0.0}
-
-[config.churn]
-baseline_daily_quit_prob = 0.002
-blowout_loss_weight = 0.15
-win_streak_weight = -0.02
-
-[config.frequency]
-mean_matches_per_day = 4.0

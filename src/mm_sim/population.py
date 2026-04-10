@@ -23,6 +23,7 @@ class Population:
     party_id: np.ndarray                # -1 means unassigned
     matches_played: np.ndarray
     recent_wins: np.ndarray             # rolling count inside churn window
+    recent_losses: np.ndarray           # rolling count inside churn window
     recent_blowout_losses: np.ndarray
     join_day: np.ndarray
 
@@ -45,6 +46,7 @@ class Population:
             party_id=np.full(n, -1, dtype=np.int32),
             matches_played=np.zeros(n, dtype=np.int32),
             recent_wins=np.zeros(n, dtype=np.int8),
+            recent_losses=np.zeros(n, dtype=np.int8),
             recent_blowout_losses=np.zeros(n, dtype=np.int8),
             join_day=np.zeros(n, dtype=np.int32),
         )
@@ -85,6 +87,9 @@ class Population:
         )
         self.recent_wins = np.concatenate(
             [self.recent_wins, np.zeros(count, dtype=np.int8)]
+        )
+        self.recent_losses = np.concatenate(
+            [self.recent_losses, np.zeros(count, dtype=np.int8)]
         )
         self.recent_blowout_losses = np.concatenate(
             [self.recent_blowout_losses, np.zeros(count, dtype=np.int8)]

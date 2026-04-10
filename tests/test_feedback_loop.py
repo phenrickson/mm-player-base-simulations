@@ -49,19 +49,10 @@ def test_feedback_loop_experiment_runs_and_produces_artifacts(tmp_path: Path):
         frequency=FrequencyConfig(mean_matches_per_day=4.0),
     )
     runner = ExperimentRunner(experiments_dir=tmp_path)
-    exp = runner.run(
-        cfg,
-        name="feedback_loop_test",
-        hypothesis=(
-            "With skill-based MM and churn sensitive to blowout losses, "
-            "we expect the active population's true_skill mean to drift "
-            "upward over the season as low-skill players who hit blowouts "
-            "churn faster than high-skill players."
-        ),
-    )
+    exp = runner.run(cfg, name="feedback_loop_test")
 
-    # Structural sanity
-    assert exp.aggregate.height == 30
+    # Structural sanity: day 0 pristine + 30 ticked days = 31 rows
+    assert exp.aggregate.height == 31
     assert exp.population is not None
     assert exp.population.height > 0
     assert {"day", "player_id", "true_skill", "active"}.issubset(
