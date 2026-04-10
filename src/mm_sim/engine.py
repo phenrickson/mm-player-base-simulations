@@ -74,6 +74,11 @@ class SimulationEngine:
         self.outcome_generator = _make_outcome_generator(cfg)
         self.rating_updater = _make_rating_updater(cfg)
         self.snapshot_writer = DailySnapshotWriter()
+        # Frozen at startup: arrivals per day keyed off the initial cohort
+        # size, not the current (bleeding) population.
+        self.daily_new_players = int(
+            round(cfg.population.initial_size * cfg.population.daily_new_player_fraction)
+        )
 
     def run(self) -> pl.DataFrame:
         """Run the full season. Returns the aggregate daily snapshot.
@@ -195,7 +200,7 @@ class SimulationEngine:
 
         # New players arrive (assigned as solo parties for simplicity)
         new_ids = self.population.add_new_players(
-            self.cfg.population.daily_new_players,
+            self.daily_new_players,
             self.cfg.population,
             spawn_child(day_rng, "new_players"),
             day=day,

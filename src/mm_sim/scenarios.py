@@ -14,7 +14,7 @@ TOML schema (all fields except `name` are optional):
 
     [config.population]
     initial_size = 5000
-    daily_new_players = 50
+    daily_new_player_fraction = 0.01
 
     [config.matchmaker]
     kind = "composite"

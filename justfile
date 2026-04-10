@@ -37,6 +37,10 @@ scenarios-list:
 plots NAME *ARGS:
     uv run python -m mm_sim.cli plots {{NAME}} {{ARGS}}
 
+# generate cross-scenario comparison plots for the current season
+compare *NAMES:
+    uv run python -m mm_sim.cli compare {{NAMES}}
+
 # delete ALL saved experiments (prompts for confirmation)
 clean-experiments:
     @printf "delete everything under experiments/? [y/N] " && read ans && [ "$ans" = "y" ] && rm -rf experiments && echo "deleted." || echo "aborted."

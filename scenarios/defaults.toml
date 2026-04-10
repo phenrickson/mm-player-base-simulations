@@ -15,19 +15,19 @@ season_days = 90
 [config.population]
 initial_size = 15000
 true_skill_distribution = "right_skewed"
-# Daily arrivals. Below break-even against typical churn so population
-# still declines over the season, but high enough that the "new player"
-# bucket stays populated all season. Set to 0 for a closed-cohort study.
-daily_new_players = 100
+# Daily arrivals as a fraction of `initial_size`, frozen at startup.
+# 0.0067 with initial_size=15000 → 100 new players/day. Set to 0 for
+# a closed-cohort study.
+daily_new_player_fraction = 0.0067
 
 [config.frequency]
 mean_matches_per_day = 5.0
 
 [config.churn]
-baseline_daily_quit_prob = 0.0015
-loss_weight = 0.025
-blowout_loss_weight = 0.1
-win_streak_weight = -0.02
+baseline_daily_quit_prob = 0.0025
+loss_weight = 0.025 # losing increases probability of droppping
+blowout_loss_weight = 0.25 # blowout losses have a huge imapct
+win_streak_weight = -0.02 # win streaks outweight it
 # New-player loss sensitivity: a player with 0 matches_played gets
 # (1 + new_player_bonus)x the loss/blowout impact; it ramps linearly
 # down to 1x at new_player_threshold matches.

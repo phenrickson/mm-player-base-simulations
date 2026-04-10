@@ -10,7 +10,7 @@ def test_short_season_runs_end_to_end():
     cfg = SimulationConfig(
         seed=1,
         season_days=5,
-        population=PopulationConfig(initial_size=500, daily_new_players=10),
+        population=PopulationConfig(initial_size=500, daily_new_player_fraction=0.02),
     )
     df = SimulationEngine(cfg).run()
     assert isinstance(df, pl.DataFrame)

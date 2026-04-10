@@ -33,7 +33,7 @@ def test_feedback_loop_experiment_runs_and_produces_artifacts(tmp_path: Path):
         population=PopulationConfig(
             initial_size=5000,
             true_skill_distribution="normal",
-            daily_new_players=50,
+            daily_new_player_fraction=0.01,
         ),
         parties=PartyConfig(size_distribution={1: 1.0}),  # solo-only for clarity
         matchmaker=MatchmakerConfig(

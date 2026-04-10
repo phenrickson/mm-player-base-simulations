@@ -13,6 +13,7 @@ from pathlib import Path
 
 import polars as pl
 
+from mm_sim.compare import compare_scenarios
 from mm_sim.experiments import (
     DEFAULT_EXPERIMENTS_DIR,
     _find_latest_season_for_experiment,
@@ -45,6 +46,13 @@ def cmd_scenarios(args: argparse.Namespace) -> None:
     experiments = run_all_scenarios()
     for exp in experiments:
         print(f"saved: {exp.metadata.name} ({exp.metadata.elapsed_seconds}s)")
+
+
+def cmd_compare(args: argparse.Namespace) -> None:
+    names = args.names if args.names else None
+    paths = compare_scenarios(names=names)
+    for path in paths:
+        print(path)
 
 
 def cmd_plots(args: argparse.Namespace) -> None:
@@ -88,6 +96,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
     p.add_argument("--version", default=None)
     p.set_defaults(func=cmd_plots)
+
+    p = sub.add_parser(
+        "compare",
+        help="generate cross-scenario comparison plots for the current season",
+    )
+    p.add_argument(
+        "names",
+        nargs="*",
+        help="scenario names to compare; defaults to all in the current season",
+    )
+    p.set_defaults(func=cmd_compare)
 
     return parser
 

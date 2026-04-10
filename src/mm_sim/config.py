@@ -12,7 +12,10 @@ class PopulationConfig(BaseModel):
     )
     true_skill_mean: float = 0.0
     true_skill_std: float = 1.0
-    daily_new_players: int = Field(0, ge=0)
+    # Fraction of `initial_size` that joins each day. Frozen at startup
+    # (arrivals don't follow the current population), so e.g. 0.03 with
+    # initial_size=10000 means exactly 300 new players every day.
+    daily_new_player_fraction: float = Field(0.0, ge=0.0)
     starting_observed_skill: float = 0.0
     starting_experience: float = 0.0
     starting_gear: float = 0.0
