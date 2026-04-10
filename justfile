@@ -25,6 +25,18 @@ experiments:
 experiment NAME:
     uv run python -c "from mm_sim.experiments import load_experiment; import polars as pl; pl.Config.set_tbl_rows(100); e = load_experiment('{{NAME}}'); print(e.metadata); print(e.aggregate)"
 
+# run a single scenario by name (looks up scenarios/NAME.toml)
+scenario NAME:
+    uv run python -c "from mm_sim.scenarios import run_scenario; e = run_scenario('{{NAME}}'); print(f'saved: {e.metadata.name} ({e.metadata.elapsed_seconds}s)')"
+
+# run every scenario in the scenarios/ directory
+scenarios:
+    uv run python -c "from mm_sim.scenarios import run_all_scenarios; exps = run_all_scenarios(); [print(f'saved: {e.metadata.name} ({e.metadata.elapsed_seconds}s)') for e in exps]"
+
+# list scenario files available to run
+scenarios-list:
+    @ls scenarios/*.toml 2>/dev/null | sed 's|scenarios/||; s|\.toml||' || echo "no scenarios/ directory yet"
+
 # refresh the uv lock file
 lock:
     uv lock

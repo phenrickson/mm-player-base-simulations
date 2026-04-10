@@ -1,0 +1,31 @@
+name = "skill_only"
+hypothesis = """
+Baseline. Pure skill-based composite matchmaker (skill=1.0, exp=0.0, gear=0.0)
+with solo-only parties. With good skill-based MM, Elo should learn quickly
+and blowouts should die off — which means the feedback loop probably won't
+emerge here. This is the null-hypothesis experiment: good MM prevents the
+dynamic we care about.
+"""
+
+[config]
+seed = 1999
+season_days = 30
+
+[config.population]
+initial_size = 5000
+daily_new_players = 50
+
+[config.parties]
+size_distribution = {1 = 1.0}
+
+[config.matchmaker]
+kind = "composite"
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
+[config.churn]
+baseline_daily_quit_prob = 0.002
+blowout_loss_weight = 0.15
+win_streak_weight = -0.02
+
+[config.frequency]
+mean_matches_per_day = 4.0
