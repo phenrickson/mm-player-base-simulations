@@ -13,8 +13,11 @@
 ## File Structure
 
 ```
+justfile                 # task runner: just test, just sim, just lock
 src/mm_sim/
   __init__.py
+  py.typed               # PEP 561 marker
+  cli.py                 # CLI entry point (python -m mm_sim.cli)
   config.py              # pydantic configs for simulation + components
   population.py          # Population dataclass: numpy arrays for all player fields
   parties.py             # Party assignment at population creation
@@ -56,9 +59,10 @@ tests/
   test_engine_smoke.py
   test_snapshot.py
   test_scenario.py
+  test_cli.py
   test_feedback_loop.py  # integration: verify the Activision feedback loop emerges
 
-docs/superpowers/plans/
+docs/plans/
   2026-04-10-player-base-simulation-v1.md  # this file
 ```
 
@@ -2732,26 +2736,75 @@ git commit -m "feat: ScenarioRunner for sweeping across configurations"
 
 ---
 
-## Task 18: CLI Entry Point and Full Test Sweep
+## Task 18: CLI Module and Full Test Sweep
 
 **Files:**
-- Modify: `main.py`
+- Create: `src/mm_sim/cli.py`
+- Create: `tests/test_cli.py`
 
-**Why:** Make it easy to run a single scenario from the CLI. Also run the full test suite to verify everything works together.
+**Why:** Provide a `python -m mm_sim.cli` entry point (wired into the `justfile`'s `just sim` recipe) that runs a default simulation and prints summary metrics. Also run the full test suite to verify everything works together.
 
-- [ ] **Step 1: Replace `main.py` with a real entry point**
+Note: the project's orchestration lives in a `justfile` at the repo root (created during Task 1 follow-up). There is no `main.py`. The CLI is a proper package module so `python -m mm_sim.cli` works without any shim.
 
-Replace the contents of `main.py`:
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_cli.py`:
 
 ```python
-"""Run a default simulation and print summary metrics."""
+import subprocess
+import sys
 
-from mm_sim.config import SimulationConfig
+
+def test_cli_runs_default_short_sim(tmp_path):
+    """Smoke test: invoke the CLI with a short season and verify it exits 0."""
+    result = subprocess.run(
+        [sys.executable, "-m", "mm_sim.cli", "--season-days", "3", "--initial-size", "200"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"CLI failed: {result.stderr}"
+    assert "active_count" in result.stdout
+    assert "true_skill_mean" in result.stdout
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `uv run pytest tests/test_cli.py -v`
+Expected: FAIL with ModuleNotFoundError on `mm_sim.cli`.
+
+- [ ] **Step 3: Implement `src/mm_sim/cli.py`**
+
+Create `src/mm_sim/cli.py`:
+
+```python
+"""Command-line entry point: run a default simulation and print summary."""
+
+from __future__ import annotations
+
+import argparse
+
+from mm_sim.config import SimulationConfig, PopulationConfig
 from mm_sim.engine import SimulationEngine
 
 
-def main() -> None:
-    cfg = SimulationConfig()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mm_sim",
+        description="Run a player-base simulation and print summary metrics.",
+    )
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--season-days", type=int, default=90)
+    parser.add_argument("--initial-size", type=int, default=50_000)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cfg = SimulationConfig(
+        seed=args.seed,
+        season_days=args.season_days,
+        population=PopulationConfig(initial_size=args.initial_size),
+    )
     engine = SimulationEngine(cfg)
     df = engine.run()
 
@@ -2770,27 +2823,33 @@ def main() -> None:
     print(f"  active_count: {first['active_count']} -> {last['active_count']}")
     print(f"  true_skill_mean: {first['true_skill_mean']:.3f} -> {last['true_skill_mean']:.3f}")
     print(f"  rating_error_mean: {first['rating_error_mean']:.3f} -> {last['rating_error_mean']:.3f}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Run the full test suite**
+- [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest -v`
+Run: `uv run pytest tests/test_cli.py -v`
+Expected: 1 passed.
+
+- [ ] **Step 5: Run the full test suite**
+
+Run: `uv run pytest -v` (or `just test`)
 Expected: All tests pass.
 
-- [ ] **Step 3: Run the CLI**
+- [ ] **Step 6: Run the CLI via justfile**
 
-Run: `uv run python main.py`
-Expected: Prints day 0 and day 89 snapshot rows and a summary line. The run may take a minute or two at 50k × 90 days; if it's unreasonably slow, reduce `initial_size` in the default or note that as a performance follow-up.
+Run: `just sim`
+Expected: Prints day 0 and day 89 snapshot rows and a summary line. At 50k × 90 days this may take a minute or two; if it's unreasonably slow, reduce `initial_size` via `uv run python -m mm_sim.cli --initial-size 5000` and note the performance as a follow-up.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add main.py
-git commit -m "feat: CLI entry point running a default simulation"
+git add src/mm_sim/cli.py tests/test_cli.py
+git commit -m "feat: mm_sim.cli module runnable via 'just sim' / 'python -m mm_sim.cli'"
 ```
 
 ---
