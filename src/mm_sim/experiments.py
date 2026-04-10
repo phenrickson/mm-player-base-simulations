@@ -26,6 +26,7 @@ import polars as pl
 from mm_sim import __version__
 from mm_sim.config import SimulationConfig
 from mm_sim.engine import SimulationEngine
+from mm_sim.plots import generate_plots
 
 
 DEFAULT_EXPERIMENTS_DIR = Path("experiments")
@@ -150,6 +151,15 @@ class ExperimentRunner:
         )
 
         _write_experiment(exp_dir, metadata, cfg, aggregate, population)
+
+        if population is not None:
+            generate_plots(
+                population=population,
+                aggregate=aggregate,
+                out_dir=exp_dir / "plots",
+                experiment_name=final_name,
+            )
+
         return Experiment(
             metadata=metadata,
             config=cfg,

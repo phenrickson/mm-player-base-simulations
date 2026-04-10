@@ -37,6 +37,10 @@ scenarios:
 scenarios-list:
     @ls scenarios/*.toml 2>/dev/null | sed 's|scenarios/||; s|\.toml||' || echo "no scenarios/ directory yet"
 
+# regenerate plots for a saved experiment
+plots NAME:
+    uv run python -c "from pathlib import Path; from mm_sim.plots import generate_plots_for_experiment_dir; paths = generate_plots_for_experiment_dir(Path('experiments') / '{{NAME}}'); print('\n'.join(str(p) for p in paths))"
+
 # refresh the uv lock file
 lock:
     uv lock
