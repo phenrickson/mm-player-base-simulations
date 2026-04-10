@@ -49,8 +49,16 @@ def cmd_scenarios(args: argparse.Namespace) -> None:
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
-    names = args.names if args.names else None
-    paths = compare_scenarios(names=names)
+    # First positional arg is treated as the season if it matches a
+    # directory under experiments/. Otherwise all positional args are
+    # scenario names in the current season.
+    season: str | None = None
+    names: list[str] = list(args.args)
+    if names and (Path(DEFAULT_EXPERIMENTS_DIR) / names[0]).is_dir():
+        season = names.pop(0)
+    paths = compare_scenarios(
+        names=names if names else None, season=season
+    )
     for path in paths:
         print(path)
 
@@ -99,12 +107,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "compare",
-        help="generate cross-scenario comparison plots for the current season",
+        help="generate cross-scenario comparison plots for a season",
     )
     p.add_argument(
-        "names",
+        "args",
         nargs="*",
-        help="scenario names to compare; defaults to all in the current season",
+        help=(
+            "optional season name (first arg, if it matches a directory "
+            "under experiments/) followed by scenario names. "
+            "defaults to all scenarios in the current season."
+        ),
     )
     p.set_defaults(func=cmd_compare)
 

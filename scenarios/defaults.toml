@@ -6,7 +6,7 @@
 # against this defaults file land in experiments/<season>/<scenario>/vN/.
 # Change this when you start a new research session with different
 # base settings so results don't get mixed with older runs.
-season = "increase-loss-rate-90day-asymmetric"
+season = "match-quality-90-days-normal"
 
 [config]
 seed = 1999
@@ -14,7 +14,7 @@ season_days = 90
 
 [config.population]
 initial_size = 15000
-true_skill_distribution = "right_skewed"
+true_skill_distribution = "normal"
 # Daily arrivals as a fraction of `initial_size`, frozen at startup.
 # 0.0067 with initial_size=15000 → 100 new players/day. Set to 0 for
 # a closed-cohort study.

@@ -62,6 +62,7 @@ class Experiment:
     config: SimulationConfig
     aggregate: pl.DataFrame
     population: pl.DataFrame | None  # None if per-day snapshots weren't saved
+    matches: pl.DataFrame | None = None  # Per-match quality log
 
 
 def _git_sha() -> str | None:
@@ -195,6 +196,7 @@ class ExperimentRunner:
             if save_population
             else None
         )
+        matches = engine.snapshot_writer.match_dataframe()
 
         metadata = ExperimentMetadata(
             name=resolved_name,
@@ -207,7 +209,7 @@ class ExperimentRunner:
             season_days=cfg.season_days,
         )
 
-        _write_experiment(version_dir, metadata, cfg, aggregate, population)
+        _write_experiment(version_dir, metadata, cfg, aggregate, population, matches)
 
         if population is not None:
             generate_plots(
@@ -222,6 +224,7 @@ class ExperimentRunner:
             config=cfg,
             aggregate=aggregate,
             population=population,
+            matches=matches,
         )
 
 
@@ -231,12 +234,15 @@ def _write_experiment(
     cfg: SimulationConfig,
     aggregate: pl.DataFrame,
     population: pl.DataFrame | None,
+    matches: pl.DataFrame | None = None,
 ) -> None:
     (exp_dir / "metadata.json").write_text(
         json.dumps(metadata.to_dict(), indent=2)
     )
     (exp_dir / "config.json").write_text(cfg.model_dump_json(indent=2))
     aggregate.write_parquet(exp_dir / "aggregate.parquet")
+    if matches is not None:
+        matches.write_parquet(exp_dir / "matches.parquet")
     if population is not None:
         population.write_parquet(exp_dir / "population.parquet")
 
@@ -278,8 +284,14 @@ def load_experiment(
     aggregate = pl.read_parquet(version_dir / "aggregate.parquet")
     pop_path = version_dir / "population.parquet"
     population = pl.read_parquet(pop_path) if pop_path.exists() else None
+    match_path = version_dir / "matches.parquet"
+    matches = pl.read_parquet(match_path) if match_path.exists() else None
     return Experiment(
-        metadata=metadata, config=cfg, aggregate=aggregate, population=population
+        metadata=metadata,
+        config=cfg,
+        aggregate=aggregate,
+        population=population,
+        matches=matches,
     )
 
 

@@ -58,10 +58,15 @@ PLOT_FILENAMES = {
     "who_left": "who_left_vs_stayed.png",
     "skill_percentiles": "true_skill_percentiles_over_time.png",
     "player_trajectories": "cumulative_score_by_skill.png",
+    "lobby_range": "lobby_range_over_time.png",
+    "lobby_std": "lobby_std_over_time.png",
+    "team_gap": "team_gap_over_time.png",
+    "win_prob_dev": "favorite_win_prob_over_time.png",
     # Grouped figures
     "overview": "overview.png",
     "churn_detail": "churn_detail.png",
     "matches_detail": "matches_detail.png",
+    "match_quality_detail": "match_quality_detail.png",
     "population_detail": "population_detail.png",
 }
 
@@ -169,6 +174,40 @@ def generate_plots(
         )
     )
 
+    # Match-quality individual panels (from aggregate.parquet).
+    written.append(
+        _save_single(
+            out_dir / PLOT_FILENAMES["lobby_range"],
+            _plot_band,
+            (aggregate, "lobby_range", "lobby true_skill range"),
+            _title("Lobby true-skill range (max − min)", experiment_name),
+        )
+    )
+    written.append(
+        _save_single(
+            out_dir / PLOT_FILENAMES["lobby_std"],
+            _plot_band,
+            (aggregate, "lobby_std", "lobby true_skill std"),
+            _title("Lobby true-skill std", experiment_name),
+        )
+    )
+    written.append(
+        _save_single(
+            out_dir / PLOT_FILENAMES["team_gap"],
+            _plot_band,
+            (aggregate, "team_gap", "team mean true_skill gap"),
+            _title("Team mean true-skill gap", experiment_name),
+        )
+    )
+    written.append(
+        _save_single(
+            out_dir / PLOT_FILENAMES["win_prob_dev"],
+            _plot_favorite_win_prob,
+            (aggregate,),
+            _title("Favorite's expected win probability", experiment_name),
+        )
+    )
+
     # ---- grouped figures --------------------------------------------------
 
     # Overview (high-signal 2x2)
@@ -217,6 +256,23 @@ def generate_plots(
     axes[1, 1].set_title("Observed-skill distribution at checkpoints")
     fig.suptitle(_title("Matches detail", experiment_name), fontsize=14)
     path = out_dir / PLOT_FILENAMES["matches_detail"]
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    written.append(path)
+
+    # Match-quality detail (4 new per-match metrics)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    _plot_band(axes[0, 0], aggregate, "lobby_range", "lobby true_skill range")
+    _plot_band(axes[0, 1], aggregate, "lobby_std", "lobby true_skill std")
+    _plot_band(axes[1, 0], aggregate, "team_gap", "team mean true_skill gap")
+    _plot_favorite_win_prob(axes[1, 1], aggregate)
+    axes[0, 0].set_title("Lobby range (max − min true_skill)")
+    axes[0, 1].set_title("Lobby std (true_skill)")
+    axes[1, 0].set_title("Team mean true_skill gap")
+    axes[1, 1].set_title("Favorite's expected win probability")
+    fig.suptitle(_title("Match quality detail", experiment_name), fontsize=14)
+    path = out_dir / PLOT_FILENAMES["match_quality_detail"]
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
@@ -654,6 +710,58 @@ def _plot_who_left_vs_stayed(ax, population: pl.DataFrame) -> None:
     ax.set_ylabel("player count")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
+
+
+def _plot_band(
+    ax, aggregate: pl.DataFrame, metric_prefix: str, ylabel: str
+) -> None:
+    """Draw mean line + shaded p50–p90 band for a daily match-quality metric.
+
+    Expects `aggregate` to have `<prefix>_mean`, `<prefix>_p50`, `<prefix>_p90`
+    columns. Falls back to just the mean line if percentiles are absent.
+    """
+    mean_col = f"{metric_prefix}_mean"
+    p50_col = f"{metric_prefix}_p50"
+    p90_col = f"{metric_prefix}_p90"
+    if mean_col not in aggregate.columns:
+        ax.text(0.5, 0.5, f"{mean_col} not recorded", ha="center", va="center")
+        return
+    days = aggregate["day"].to_numpy()
+    mean = aggregate[mean_col].to_numpy()
+    if p50_col in aggregate.columns and p90_col in aggregate.columns:
+        p50 = aggregate[p50_col].to_numpy()
+        p90 = aggregate[p90_col].to_numpy()
+        ax.fill_between(days, p50, p90, alpha=0.2, color=COLOR_STAYED, label="p50–p90")
+    ax.plot(days, mean, linewidth=2, color=COLOR_STAYED, label="mean")
+    ax.set_xlabel("day")
+    ax.set_ylabel(ylabel)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, loc="upper right")
+
+
+def _plot_favorite_win_prob(ax, aggregate: pl.DataFrame) -> None:
+    """Stronger team's expected win probability: 0.5 + |dev|.
+
+    0.5 = perfect coin flip; 1.0 = locked stomp. Shaded band between
+    mean-at-p50 and mean-at-p90 to show typical vs worst matches.
+    """
+    if "win_prob_dev_mean" not in aggregate.columns:
+        ax.text(0.5, 0.5, "win_prob_dev not recorded", ha="center", va="center")
+        return
+    days = aggregate["day"].to_numpy()
+    mean = 0.5 + aggregate["win_prob_dev_mean"].to_numpy()
+    if "win_prob_dev_p50" in aggregate.columns and "win_prob_dev_p90" in aggregate.columns:
+        p50 = 0.5 + aggregate["win_prob_dev_p50"].to_numpy()
+        p90 = 0.5 + aggregate["win_prob_dev_p90"].to_numpy()
+        ax.fill_between(days, p50, p90, alpha=0.2, color=COLOR_STAYED, label="p50–p90")
+    ax.plot(days, mean, linewidth=2, color=COLOR_STAYED, label="mean")
+    ax.axhline(0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6, label="coin flip")
+    ax.set_xlabel("day")
+    ax.set_ylabel("favorite's expected win probability")
+    ax.set_ylim(0.4, 1.0)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, loc="upper right")
 
 
 def _plot_true_skill_percentiles(ax, aggregate: pl.DataFrame) -> None:

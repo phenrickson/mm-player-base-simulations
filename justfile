@@ -37,9 +37,10 @@ scenarios-list:
 plots NAME *ARGS:
     uv run python -m mm_sim.cli plots {{NAME}} {{ARGS}}
 
-# generate cross-scenario comparison plots for the current season
-compare *NAMES:
-    uv run python -m mm_sim.cli compare {{NAMES}}
+# generate cross-scenario comparison plots. first arg can be a season name;
+# remaining args are scenario names. with no args, uses the current season.
+compare *ARGS:
+    uv run python -m mm_sim.cli compare {{ARGS}}
 
 # delete ALL saved experiments (prompts for confirmation)
 clean-experiments:

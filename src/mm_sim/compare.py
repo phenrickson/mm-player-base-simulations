@@ -25,16 +25,19 @@ log = logging.getLogger(__name__)
 
 def compare_scenarios(
     names: list[str] | None = None,
+    season: str | None = None,
     scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
     experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
 ) -> list[Path]:
-    """Generate comparison plots across scenarios in the current season.
+    """Generate comparison plots across scenarios in a season.
 
+    If `season` is None, uses the current season from `defaults.toml`.
     If `names` is None, compares every scenario with at least one saved
-    run in the current season (skipping underscore-prefixed dirs like
-    the `_comparisons` output).
+    run in that season (skipping underscore-prefixed dirs like the
+    `_comparisons` output).
     """
-    season = load_season_name(scenarios_dir)
+    if season is None:
+        season = load_season_name(scenarios_dir)
     season_dir = Path(experiments_dir) / season
     if not season_dir.exists():
         raise FileNotFoundError(
@@ -75,6 +78,26 @@ def compare_scenarios(
             "Final-day true-skill distribution (active players)",
             _plot_final_skill_distribution,
         ),
+        (
+            "lobby_range.png",
+            "Lobby true-skill range (max − min)",
+            _make_band_plot("lobby_range"),
+        ),
+        (
+            "lobby_std.png",
+            "Lobby true-skill std",
+            _make_band_plot("lobby_std"),
+        ),
+        (
+            "team_gap.png",
+            "Team mean true-skill gap",
+            _make_band_plot("team_gap"),
+        ),
+        (
+            "favorite_win_prob.png",
+            "Favorite's expected win probability",
+            _plot_win_prob_dev_comparison,
+        ),
     ]
 
     for filename, title, plot_fn in panels:
@@ -103,6 +126,23 @@ def compare_scenarios(
     fig.savefig(overview_path, dpi=120)
     plt.close(fig)
     written.append(overview_path)
+
+    # Match-quality 2x2 (all 4 per-match metrics)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    _make_band_plot("lobby_range")(axes[0, 0], experiments, colors)
+    _make_band_plot("lobby_std")(axes[0, 1], experiments, colors)
+    _make_band_plot("team_gap")(axes[1, 0], experiments, colors)
+    _plot_win_prob_dev_comparison(axes[1, 1], experiments, colors)
+    axes[0, 0].set_title("Lobby range (max − min true_skill)")
+    axes[0, 1].set_title("Lobby std (true_skill)")
+    axes[1, 0].set_title("Team mean true_skill gap")
+    axes[1, 1].set_title("Favorite's expected win probability")
+    fig.suptitle(f"Match quality — {season}", fontsize=14)
+    fig.tight_layout()
+    mq_path = out_dir / "match_quality.png"
+    fig.savefig(mq_path, dpi=120)
+    plt.close(fig)
+    written.append(mq_path)
 
     # Churn rate by cohort (1x3: new / casual / experienced)
     fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
@@ -176,22 +216,61 @@ def _plot_active_population(ax, experiments: list, colors) -> None:
 
 
 def _plot_rating_error(ax, experiments: list, colors) -> None:
+    """Two lines per scenario: solid = all active players (includes new
+    arrivals and excludes churned); dashed = day-0 cohort only (fixed
+    set of players, shows Elo convergence independent of churn).
+
+    Divergence between the two exposes survivorship / new-arrival
+    effects: if the solid line looks better than the dashed one, the
+    scenario is benefiting from churning out high-error players or
+    has too few high-error arrivals to matter.
+    """
     for color, exp in zip(colors, experiments):
         agg = exp.aggregate
-        if "rating_error_mean" not in agg.columns:
+        if "rating_error_mean" in agg.columns:
+            ax.plot(
+                agg["day"].to_numpy(),
+                agg["rating_error_mean"].to_numpy(),
+                linewidth=2,
+                color=color,
+                label=exp.metadata.name,
+            )
+        pop = exp.population
+        if pop is None:
             continue
-        ax.plot(
-            agg["day"].to_numpy(),
-            agg["rating_error_mean"].to_numpy(),
-            linewidth=2,
-            color=color,
-            label=exp.metadata.name,
+        day_zero_ids = pop.filter(pl.col("day") == 0)["player_id"].to_list()
+        if not day_zero_ids:
+            continue
+        cohort = (
+            pop.filter(
+                pl.col("player_id").is_in(day_zero_ids) & pl.col("active")
+            )
+            .with_columns(
+                (pl.col("observed_skill") - pl.col("true_skill")).abs().alias("err")
+            )
+            .group_by("day")
+            .agg(pl.col("err").mean().alias("err"))
+            .sort("day")
         )
+        ax.plot(
+            cohort["day"].to_numpy(),
+            cohort["err"].to_numpy(),
+            linewidth=1.5,
+            linestyle="--",
+            color=color,
+        )
+
     ax.set_xlabel("day")
     ax.set_ylabel("mean |observed − true| skill")
     ax.set_ylim(bottom=0)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8, loc="upper right")
+    # Note in legend that dashed = day-0 cohort subset
+    ax.legend(
+        fontsize=8,
+        loc="upper right",
+        title="— all active, -- day-0 cohort",
+        title_fontsize=7,
+    )
 
 
 def _plot_blowout_share(ax, experiments: list, colors) -> None:
@@ -212,6 +291,73 @@ def _plot_blowout_share(ax, experiments: list, colors) -> None:
     ax.set_xlabel("day")
     ax.set_ylabel("blowout share of matches")
     ax.set_ylim(0, 1.02)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, loc="upper right")
+
+
+def _make_band_plot(metric_prefix: str):
+    """Build an axis-plotter closure for a match-quality metric.
+
+    Draws one solid mean line per scenario, plus a faint shaded band
+    between p50 and p90. Reads `<prefix>_mean/_p50/_p90` columns from
+    each experiment's aggregate dataframe.
+    """
+    mean_col = f"{metric_prefix}_mean"
+    p50_col = f"{metric_prefix}_p50"
+    p90_col = f"{metric_prefix}_p90"
+
+    def _plot(ax, experiments: list, colors) -> None:
+        for color, exp in zip(colors, experiments):
+            agg = exp.aggregate
+            if mean_col not in agg.columns:
+                continue
+            days = agg["day"].to_numpy()
+            mean = agg[mean_col].to_numpy()
+            if p50_col in agg.columns and p90_col in agg.columns:
+                p50 = agg[p50_col].to_numpy()
+                p90 = agg[p90_col].to_numpy()
+                ax.fill_between(days, p50, p90, alpha=0.15, color=color)
+            ax.plot(
+                days,
+                mean,
+                linewidth=2,
+                color=color,
+                label=exp.metadata.name,
+            )
+        ax.set_xlabel("day")
+        ax.set_ylabel(metric_prefix)
+        ax.set_ylim(bottom=0)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8, loc="upper right")
+
+    return _plot
+
+
+def _plot_win_prob_dev_comparison(ax, experiments: list, colors) -> None:
+    for color, exp in zip(colors, experiments):
+        agg = exp.aggregate
+        if "win_prob_dev_mean" not in agg.columns:
+            continue
+        days = agg["day"].to_numpy()
+        mean = 0.5 + agg["win_prob_dev_mean"].to_numpy()
+        if (
+            "win_prob_dev_p50" in agg.columns
+            and "win_prob_dev_p90" in agg.columns
+        ):
+            p50 = 0.5 + agg["win_prob_dev_p50"].to_numpy()
+            p90 = 0.5 + agg["win_prob_dev_p90"].to_numpy()
+            ax.fill_between(days, p50, p90, alpha=0.15, color=color)
+        ax.plot(
+            days,
+            mean,
+            linewidth=2,
+            color=color,
+            label=exp.metadata.name,
+        )
+    ax.axhline(0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6, label="coin flip")
+    ax.set_xlabel("day")
+    ax.set_ylabel("favorite's expected win probability")
+    ax.set_ylim(0.4, 1.0)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, loc="upper right")
 

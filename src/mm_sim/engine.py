@@ -127,6 +127,7 @@ class SimulationEngine:
 
         matches_today = 0
         blowouts_today = 0
+        day_match_idx = 0
 
         max_rounds = int(matches_per_player.max(initial=0))
         for round_idx in range(max_rounds):
@@ -155,6 +156,22 @@ class SimulationEngine:
 
                 flat_ids = result.flat_player_ids()
                 total_matches[flat_ids] += 1
+
+                # Per-match quality metrics based on true_skill.
+                lobby_true = self.population.true_skill[flat_ids]
+                team_trues = [
+                    self.population.true_skill[np.array(team, dtype=np.int32)]
+                    for team in lobby.teams
+                ]
+                self.snapshot_writer.record_match(
+                    day=day,
+                    match_idx=day_match_idx,
+                    lobby_true_skills=lobby_true,
+                    team_true_skills=team_trues,
+                    is_blowout=bool(result.is_blowout),
+                    winning_team=int(result.winning_team),
+                )
+                day_match_idx += 1
 
                 winning_team_ids = np.array(
                     lobby.teams[result.winning_team], dtype=np.int32
