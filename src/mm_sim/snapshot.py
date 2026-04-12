@@ -173,6 +173,7 @@ class DailySnapshotWriter:
                 "recent_wins": pop.recent_wins.astype(np.int16),
                 "recent_losses": pop.recent_losses.astype(np.int16),
                 "recent_blowout_losses": pop.recent_blowout_losses.astype(np.int16),
+                "loss_streak": pop.loss_streak.copy(),
                 "join_day": pop.join_day.copy(),
             }
         )
