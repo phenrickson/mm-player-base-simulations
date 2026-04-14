@@ -19,6 +19,7 @@ class PopulationConfig(BaseModel):
     starting_observed_skill: float = 0.0
     starting_experience: float = 0.0
     starting_gear: float = 0.0
+    starting_true_skill_fraction: float = Field(0.3, ge=0.0, le=1.0)
 
 
 class PartyConfig(BaseModel):
@@ -99,6 +100,15 @@ class GearConfig(BaseModel):
     max_gear: float = 1.0
 
 
+class SkillProgressionConfig(BaseModel):
+    """Per-tick true_skill drift toward a per-player talent ceiling."""
+
+    enabled: bool = False
+    tau: float = Field(75.0, gt=0.0)
+    noise_std: float = Field(0.02, ge=0.0)
+    starting_true_skill_fraction: float = Field(0.3, ge=0.0, le=1.0)
+
+
 class SimulationConfig(BaseModel):
     seed: int = 1999
     season_days: int = Field(90, gt=0)
@@ -112,3 +122,6 @@ class SimulationConfig(BaseModel):
     churn: ChurnConfig = Field(default_factory=ChurnConfig)
     frequency: FrequencyConfig = Field(default_factory=FrequencyConfig)
     gear: GearConfig = Field(default_factory=GearConfig)
+    skill_progression: SkillProgressionConfig = Field(
+        default_factory=SkillProgressionConfig
+    )
