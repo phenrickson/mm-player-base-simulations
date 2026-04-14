@@ -1,3 +1,5 @@
+set shell := ["pwsh.exe", "-c"]
+
 _default:
     @just --list
 
@@ -35,7 +37,9 @@ scenarios:
 
 # list scenario files available to run
 scenarios-list:
-    @ls scenarios/*.toml 2>/dev/null | sed 's|scenarios/||; s|\.toml||' || echo "no scenarios/ directory yet"
+    Get-ChildItem scenarios -Filter *.toml -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.BaseName } `
+    || echo "no scenarios/ directory yet"
 
 # regenerate plots for a saved experiment (latest version by default, or pass --version v2)
 plots NAME *ARGS:

@@ -177,11 +177,16 @@ class SimulationEngine:
                     lobby.teams[result.winning_team], dtype=np.int32
                 )
                 total_wins[winning_team_ids] += 1
+
+                # RESET streak on win
+                self.population.loss_streak[winning_team_ids] = 0
+
                 for team_idx, team in enumerate(lobby.teams):
                     if team_idx == result.winning_team:
                         continue
                     losing_team_ids = np.array(team, dtype=np.int32)
                     total_losses[losing_team_ids] += 1
+                    self.population.loss_streak[losing_team_ids] += 1
                     if result.is_blowout:
                         total_blowout_losses[losing_team_ids] += 1
 

@@ -83,6 +83,8 @@ class ChurnConfig(BaseModel):
     # clipped so veterans (matches_played >= threshold) get a 1x multiplier.
     new_player_bonus: float = 1.0
     new_player_threshold: int = Field(20, gt=0)
+    loss_streak_exp: float = 0.3
+    max_loss_streak_multiplier: float = 4.0
 
 
 class FrequencyConfig(BaseModel):

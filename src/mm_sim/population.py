@@ -24,6 +24,7 @@ class Population:
     matches_played: np.ndarray
     recent_wins: np.ndarray             # rolling count inside churn window
     recent_losses: np.ndarray           # rolling count inside churn window
+    loss_streak: np.ndarray
     recent_blowout_losses: np.ndarray
     join_day: np.ndarray
 
@@ -47,6 +48,7 @@ class Population:
             matches_played=np.zeros(n, dtype=np.int32),
             recent_wins=np.zeros(n, dtype=np.int8),
             recent_losses=np.zeros(n, dtype=np.int8),
+            loss_streak=np.zeros(n, dtype=np.int8),
             recent_blowout_losses=np.zeros(n, dtype=np.int8),
             join_day=np.zeros(n, dtype=np.int32),
         )
@@ -90,6 +92,9 @@ class Population:
         )
         self.recent_losses = np.concatenate(
             [self.recent_losses, np.zeros(count, dtype=np.int8)]
+        )
+        self.loss_streak = np.concatenate(
+            [self.loss_streak, np.zeros(count, dtype=np.int8)]
         )
         self.recent_blowout_losses = np.concatenate(
             [self.recent_blowout_losses, np.zeros(count, dtype=np.int8)]

@@ -24,12 +24,14 @@ daily_new_player_fraction = 0.0067
 mean_matches_per_day = 5.0
 
 [config.churn]
-baseline_daily_quit_prob = 0.0025
+baseline_daily_quit_prob = 0.005
 loss_weight = 0.04 # losing increases probability of droppping
-blowout_loss_weight = 0.25 # blowout losses have a huge imapct
-win_streak_weight = -0.02 # win streaks outweight it
+blowout_loss_weight = 0.14 # blowout losses have a huge impact
+win_streak_weight = -0.02
 # New-player loss sensitivity: a player with 0 matches_played gets
 # (1 + new_player_bonus)x the loss/blowout impact; it ramps linearly
 # down to 1x at new_player_threshold matches.
-new_player_bonus =0.5
-new_player_threshold = 20
+new_player_bonus = 0.75
+new_player_threshold = 15
+loss_streak_exp = 0.3
+max_loss_streak_multiplier = 4.0

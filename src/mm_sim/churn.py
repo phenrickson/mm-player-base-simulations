@@ -28,6 +28,7 @@ def apply_churn(
 ) -> None:
     window = float(cfg.rolling_window)
     loss_rate = pop.recent_losses.astype(np.float32) / window
+    loss_streak = pop.loss_streak.astype(np.float32)
     blowout_rate = pop.recent_blowout_losses.astype(np.float32) / window
     win_rate = pop.recent_wins.astype(np.float32) / window
 
@@ -37,7 +38,16 @@ def apply_churn(
     newness = np.clip(1.0 - pop.matches_played.astype(np.float32) / threshold, 0.0, 1.0)
     sensitivity = (1.0 + cfg.new_player_bonus * newness).astype(np.float32)
 
-    loss_term = cfg.loss_weight * (loss_rate ** 2)
+    loss_streak_multiplier = np.exp(cfg.loss_streak_exp * loss_streak) - 1.0
+    loss_streak_multiplier = np.clip(
+        loss_streak_multiplier,
+        0.0,
+        cfg.max_loss_streak_multiplier
+    ).astype(np.float32)
+
+    loss_streak_factor = 1.0 + loss_streak_multiplier
+
+    loss_term = cfg.loss_weight * (loss_rate ** 2) * loss_streak_factor
     blowout_term = cfg.blowout_loss_weight * blowout_rate
 
     quit_prob = np.clip(
