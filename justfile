@@ -1,4 +1,4 @@
-set shell := ["pwsh.exe", "-c"]
+set windows-shell := ["pwsh.exe", "-c"]
 
 _default:
     @just --list
@@ -37,9 +37,7 @@ scenarios:
 
 # list scenario files available to run
 scenarios-list:
-    Get-ChildItem scenarios -Filter *.toml -ErrorAction SilentlyContinue |
-    ForEach-Object { $_.BaseName } `
-    || echo "no scenarios/ directory yet"
+    @uv run python -c "import glob, os; names = [os.path.splitext(os.path.basename(p))[0] for p in sorted(glob.glob('scenarios/*.toml'))]; print('\n'.join(names) if names else 'no scenarios/ directory yet')"
 
 # regenerate plots for a saved experiment (latest version by default, or pass --version v2)
 plots NAME *ARGS:
