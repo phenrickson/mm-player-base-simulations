@@ -16,6 +16,7 @@ from mm_sim.config import PopulationConfig
 @dataclass
 class Population:
     true_skill: np.ndarray              # hidden ground-truth skill
+    talent_ceiling: np.ndarray          # per-player ceiling for true_skill drift
     observed_skill: np.ndarray          # matchmaker's estimate
     experience: np.ndarray              # normalized [0, 1]
     gear: np.ndarray                    # normalized [0, 1]
@@ -37,9 +38,12 @@ class Population:
         cls, cfg: PopulationConfig, rng: np.random.Generator
     ) -> "Population":
         n = cfg.initial_size
-        true_skill = _sample_skill(n, cfg, rng).astype(np.float32)
+        talent_ceiling = _sample_skill(n, cfg, rng).astype(np.float32)
+        fraction = cfg.starting_true_skill_fraction
+        true_skill = (talent_ceiling * fraction).astype(np.float32)
         return cls(
             true_skill=true_skill,
+            talent_ceiling=talent_ceiling,
             observed_skill=np.full(n, cfg.starting_observed_skill, dtype=np.float32),
             experience=np.full(n, cfg.starting_experience, dtype=np.float32),
             gear=np.full(n, cfg.starting_gear, dtype=np.float32),
@@ -62,9 +66,11 @@ class Population:
     ) -> np.ndarray:
         if count <= 0:
             return np.array([], dtype=np.int32)
-        new_true = _sample_skill(count, cfg, rng).astype(np.float32)
+        new_ceiling = _sample_skill(count, cfg, rng).astype(np.float32)
+        new_true = (new_ceiling * cfg.starting_true_skill_fraction).astype(np.float32)
         start = self.size
         self.true_skill = np.concatenate([self.true_skill, new_true])
+        self.talent_ceiling = np.concatenate([self.talent_ceiling, new_ceiling])
         self.observed_skill = np.concatenate(
             [
                 self.observed_skill,
