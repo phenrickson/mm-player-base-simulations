@@ -40,7 +40,7 @@ class Population:
         n = cfg.initial_size
         talent_ceiling = _sample_skill(n, cfg, rng).astype(np.float32)
         fraction = cfg.starting_true_skill_fraction
-        true_skill = (talent_ceiling * fraction).astype(np.float32)
+        true_skill = (talent_ceiling - np.abs(talent_ceiling) * (1.0 - fraction)).astype(np.float32)
         return cls(
             true_skill=true_skill,
             talent_ceiling=talent_ceiling,
@@ -67,7 +67,8 @@ class Population:
         if count <= 0:
             return np.array([], dtype=np.int32)
         new_ceiling = _sample_skill(count, cfg, rng).astype(np.float32)
-        new_true = (new_ceiling * cfg.starting_true_skill_fraction).astype(np.float32)
+        frac = cfg.starting_true_skill_fraction
+        new_true = (new_ceiling - np.abs(new_ceiling) * (1.0 - frac)).astype(np.float32)
         start = self.size
         self.true_skill = np.concatenate([self.true_skill, new_true])
         self.talent_ceiling = np.concatenate([self.talent_ceiling, new_ceiling])

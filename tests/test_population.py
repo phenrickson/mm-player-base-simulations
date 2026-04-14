@@ -73,7 +73,10 @@ def test_initial_true_skill_is_fraction_of_ceiling():
 
     cfg = PopulationConfig(initial_size=500, starting_true_skill_fraction=0.3)
     pop = Population.create_initial(cfg, np.random.default_rng(1))
-    np.testing.assert_allclose(pop.true_skill, pop.talent_ceiling * 0.3, rtol=1e-5)
+    # true_skill = ceiling - |ceiling| * (1 - fraction), always <= ceiling
+    expected = pop.talent_ceiling - np.abs(pop.talent_ceiling) * (1.0 - 0.3)
+    np.testing.assert_allclose(pop.true_skill, expected.astype(np.float32), rtol=1e-5)
+    assert np.all(pop.true_skill <= pop.talent_ceiling)
 
 
 def test_add_new_players_extends_talent_ceiling():
