@@ -128,8 +128,8 @@ def small_multiples(runs: RunList) -> go.Figure:
         cols=2,
         subplot_titles=[p[0] for p in panels],
         shared_xaxes=False,
-        horizontal_spacing=0.08,
-        vertical_spacing=0.12,
+        horizontal_spacing=0.12,
+        vertical_spacing=0.18,
     )
     positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
     colors = _color_map([label for label, _ in runs])
@@ -151,16 +151,16 @@ def small_multiples(runs: RunList) -> go.Figure:
             )
         fig.update_xaxes(title_text="day", row=r, col=c)
     fig.update_layout(
-        height=700,
+        height=750,
         hovermode="x unified",
         legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1.0,
-            xanchor="left",
-            x=1.02,
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="center",
+            x=0.5,
         ),
-        margin=dict(r=180),
+        margin=dict(t=120, r=40),
     )
     return fig
 
