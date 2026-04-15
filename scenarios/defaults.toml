@@ -20,6 +20,15 @@ true_skill_distribution = "right_skewed"
 # a closed-cohort study.
 daily_new_player_fraction = 0.0067
 
+[config.parties]
+# Mix of solo/duo/trio parties. Must sum to 1.0.
+size_distribution = {1 = 0.5, 2 = 0.2, 3 = 0.3}
+
+[config.outcomes]
+# Gear contribution to match performance alongside true_skill.
+# 0.0 = gear is cosmetic; 0.5 = gear meaningfully affects outcomes.
+gear_weight = 0.5
+
 [config.frequency]
 mean_matches_per_day = 5.0
 
@@ -35,3 +44,12 @@ new_player_bonus = 0.75
 new_player_threshold = 15
 loss_streak_exp = 0.3
 max_loss_streak_multiplier = 4.0
+
+[config.skill_progression]
+enabled = true
+
+[config.gear]
+transfer_enabled = true
+
+[config.season_progression]
+enabled = true

@@ -1,9 +1,9 @@
 name = "sweep_mm_skill_weight"
-base_scenario = "all_progression_base"
 
-# Sweep the composite matchmaker's skill weight from 0.0 to 1.0 with gear
-# carrying the remainder — a pure skill-vs-gear tradeoff. Experience is
-# fixed at 0 so the two axes sum to 1 at every point.
+# Sweep the composite matchmaker's skill weight from 0.0 to 1.0 with
+# experience carrying the remainder. Gear weight is pinned at 0 so the
+# two varying axes sum to 1 at every point. Inherits progression, party
+# mix, and outcomes.gear_weight from defaults.toml.
 
 [[sweep.zip]]
 parameter = "config.matchmaker.composite_weights.skill"

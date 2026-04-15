@@ -19,3 +19,10 @@ htmlcov/
 
 # Experiment artifacts
 experiments/
+
+# Scratch files and directories
+*.scratch
+*.scratch/
+.scratch/
+**/.scratch/
+**/*.scratch

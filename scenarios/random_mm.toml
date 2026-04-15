@@ -1,8 +1,8 @@
 name = "random_mm"
 category = "matchmaker"
 
-[config.parties]
-size_distribution = {1 = 1.0}
+# No matchmaking — lower-bound reference for skill-weight sweeps.
+# Inherits everything else (progression, party mix, gear_weight) from defaults.toml.
 
 [config.matchmaker]
 kind = "random"

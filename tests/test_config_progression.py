@@ -41,7 +41,7 @@ def test_population_starting_true_skill_fraction_default():
 def test_gear_transfer_defaults_disabled():
     cfg = SimulationConfig()
     assert cfg.gear.transfer_enabled is False
-    assert cfg.gear.transfer_rate == 0.01
+    assert cfg.gear.transfer_rate == 0.005
     assert cfg.gear.transfer_rate_blowout == 0.04
 
 
@@ -55,7 +55,7 @@ def test_gear_transfer_rates_nonnegative():
 def test_season_progression_defaults_disabled():
     cfg = SimulationConfig()
     assert cfg.season_progression.enabled is False
-    assert cfg.season_progression.earn_per_match == 0.02
+    assert cfg.season_progression.earn_per_match == 0.005
     assert cfg.season_progression.curve_steepness == 3.0
     assert cfg.season_progression.behind_weight == 0.02
     assert cfg.season_progression.boredom_weight == 0.01
