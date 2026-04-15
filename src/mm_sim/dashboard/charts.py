@@ -352,28 +352,106 @@ def cohort_metric_by_skill_decile(
 
 
 def player_trajectories(
-    population: pl.DataFrame, player_ids: list[int], metric: str
+    population: pl.DataFrame,
+    player_ids: list[int],
+    metric: str,
+    color_by: str | None = "day-0 true_skill",
+    x_axis: str = "season",
 ) -> go.Figure:
-    """Plot one metric over time for each of the selected players."""
-    sub = population.filter(pl.col("player_id").is_in(player_ids)).sort("day")
+    """Plot one metric over time per selected player.
+
+    Lines end at each player's last active day. `color_by` is a named
+    preset like "day-0 true_skill" or "final observed_skill"; None uses
+    a single uniform color. Colors use the Viridis scale.
+    """
+    import plotly.express as px
+
+    sub = (
+        population.filter(pl.col("player_id").is_in(player_ids))
+        .filter(pl.col("active"))
+        .sort("day")
+    )
+    if x_axis == "player":
+        sub = sub.with_columns(
+            (pl.col("day") - pl.col("join_day")).alias("_x")
+        )
+        x_title = "player day (day \u2212 join_day)"
+    else:
+        sub = sub.with_columns(pl.col("day").alias("_x"))
+        x_title = "day"
+
+    color_lookup: dict[int, float] = {}
+    if color_by is not None:
+        when, _, col = color_by.partition(" ")
+        if when == "day-0":
+            snap = (
+                population.filter(pl.col("day") == 0)
+                .filter(pl.col("player_id").is_in(player_ids))
+                .select(["player_id", col])
+            )
+        elif when == "final":
+            snap = (
+                sub.group_by("player_id")
+                .agg(pl.col(col).last().alias(col))
+            )
+        else:
+            snap = None
+        if snap is not None and snap.height:
+            color_lookup = dict(
+                zip(snap["player_id"].to_list(), snap[col].to_list())
+            )
+    if color_lookup:
+        c_min = min(color_lookup.values())
+        c_max = max(color_lookup.values())
+        c_range = (c_max - c_min) or 1.0
+    else:
+        c_min, c_max, c_range = 0.0, 1.0, 1.0
+
     fig = go.Figure()
     for pid in player_ids:
         ps = sub.filter(pl.col("player_id") == pid)
         if ps.height == 0:
             continue
+        if color_by is not None and pid in color_lookup:
+            val = color_lookup[pid]
+            frac = (val - c_min) / c_range
+            rgb = px.colors.sample_colorscale("Viridis", [frac])[0]
+            hover_extra = f" ({color_by}: {val:.2f})"
+        else:
+            rgb = "#6fa8dc"
+            hover_extra = ""
         fig.add_trace(
             go.Scatter(
-                x=ps["day"].to_list(),
+                x=ps["_x"].to_list(),
                 y=ps[metric].to_list(),
                 mode="lines",
+                line=dict(color=rgb, width=1.5),
+                opacity=0.55,
+                showlegend=False,
                 name=f"player {pid}",
-                hovertemplate=f"player {pid}: %{{y:.3f}}<extra></extra>",
+                hovertemplate=(
+                    f"player {pid}{hover_extra}"
+                    f"<br>{x_title} %{{x}} \u2014 {metric}: %{{y:.3f}}<extra></extra>"
+                ),
             )
         )
+    if color_by is not None and color_lookup:
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None], mode="markers",
+                marker=dict(
+                    colorscale="Viridis", cmin=c_min, cmax=c_max,
+                    color=[c_min], showscale=True,
+                    colorbar=dict(title=color_by),
+                ),
+                showlegend=False, hoverinfo="skip",
+            )
+        )
+    color_note = f"color = {color_by} (Viridis)" if color_by else "uniform color"
     fig.update_layout(
-        title=f"{metric} over time (selected players)",
-        xaxis_title="day", yaxis_title=metric,
-        hovermode="x unified",
+        title=f"{metric} over time ({color_note}; line ends at churn)",
+        xaxis_title=x_title, yaxis_title=metric,
+        hovermode="closest",
     )
     return fig
 
@@ -389,12 +467,18 @@ def player_scatter(
         return fig
     x = snap[x_col].to_list()
     y = snap[y_col].to_list()
+    pids = snap["player_id"].to_list()
     r = snap.select(pl.corr(x_col, y_col)).item()
     fig = go.Figure(
         go.Scattergl(
             x=x, y=y, mode="markers",
             marker=dict(size=4, opacity=0.4),
-            hovertemplate=f"{x_col}: %{{x:.3f}}<br>{y_col}: %{{y:.3f}}<extra></extra>",
+            customdata=pids,
+            hovertemplate=(
+                "player %{customdata}"
+                f"<br>{x_col}: %{{x:.3f}}"
+                f"<br>{y_col}: %{{y:.3f}}<extra></extra>"
+            ),
         )
     )
     fig.update_layout(

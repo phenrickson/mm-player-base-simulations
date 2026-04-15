@@ -21,8 +21,30 @@ if not all_scenarios:
     st.warning(f"No scenarios in `{season}`.")
     st.stop()
 
+# Group sweep-point ids by sweep name so we can offer "select all in sweep"
+sweeps: dict[str, list[str]] = {}
+regular_scenarios: list[str] = []
+for s in all_scenarios:
+    if "/" in s:
+        sweep_name = s.split("/", 1)[0]
+        sweeps.setdefault(sweep_name, []).append(s)
+    else:
+        regular_scenarios.append(s)
+
+if sweeps:
+    st.sidebar.caption("Add all points from a sweep:")
+    for sweep_name, pts in sweeps.items():
+        if st.sidebar.button(
+            f"+ {sweep_name} ({len(pts)})", key=f"add_{sweep_name}"
+        ):
+            current = st.session_state.get("compare_selected", list(regular_scenarios))
+            st.session_state["compare_selected"] = list(dict.fromkeys(current + pts))
+
 selected = st.sidebar.multiselect(
-    "scenarios", all_scenarios, default=all_scenarios
+    "scenarios",
+    all_scenarios,
+    default=regular_scenarios,
+    key="compare_selected",
 )
 if not selected:
     st.info("Pick at least one scenario.")

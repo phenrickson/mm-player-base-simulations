@@ -95,11 +95,6 @@ with tab_cohorts:
             key="cohort_observed",
         )
         st.plotly_chart(
-            charts.cohort_metric_by_skill_decile(exp.population, "experience"),
-            use_container_width=True,
-            key="cohort_experience",
-        )
-        st.plotly_chart(
             charts.cohort_metric_by_skill_decile(exp.population, "gear"),
             use_container_width=True,
             key="cohort_gear",
@@ -110,24 +105,41 @@ with tab_players:
     if exp.population is None:
         st.info("No population.parquet saved for this run.")
     else:
-        all_ids = exp.population["player_id"].unique().to_list()
-        st.caption(f"{len(all_ids):,} total players in this run.")
+        only_day0 = st.checkbox(
+            "only players present on day 0", value=False, key="players_only_day0"
+        )
+        if only_day0:
+            all_ids = (
+                exp.population.filter(pl.col("day") == 0)["player_id"]
+                .unique()
+                .to_list()
+            )
+        else:
+            all_ids = exp.population["player_id"].unique().to_list()
+        st.caption(
+            f"{len(all_ids):,} players in pool"
+            + (" (day-0 only)" if only_day0 else " (all, including later joiners)")
+        )
 
+        sample_sizes = [1, 5, 10, 25, 50, 100] + list(range(150, 1001, 50))
         col_a, col_b = st.columns([2, 1])
         with col_a:
-            sample_size = st.slider(
-                "random sample size", 1, 30, 10, key="players_sample_size"
+            sample_size = st.select_slider(
+                "random sample size",
+                options=sample_sizes,
+                value=10,
+                key="players_sample_size",
             )
             import random
-            seed = st.number_input("sample seed", value=0, step=1, key="players_seed")
-            rng = random.Random(seed)
-            default_ids = rng.sample(all_ids, min(sample_size, len(all_ids)))
-            picked = st.multiselect(
-                "players to plot",
-                options=all_ids,
-                default=default_ids,
-                key="players_picked",
+            rng = random.Random(1999)
+            sample_ids = rng.sample(all_ids, min(sample_size, len(all_ids)))
+            extra_ids = st.multiselect(
+                "add specific player_ids",
+                options=[i for i in all_ids if i not in sample_ids],
+                default=[],
+                key="players_extra",
             )
+            picked = sample_ids + extra_ids
         with col_b:
             metric = st.selectbox(
                 "metric",
@@ -139,12 +151,44 @@ with tab_players:
                     "matches_played",
                     "loss_streak",
                 ],
-                key="players_metric",
+                key="players_metric_v2",
+            )
+            color_by = st.selectbox(
+                "color by",
+                [
+                    "day-0 true_skill",
+                    "day-0 talent_ceiling",
+                    "day-0 join_day",
+                    "final observed_skill",
+                    "final gear",
+                    "final experience",
+                    "final matches_played",
+                    "none",
+                ],
+                index=0,
+                key="players_color_by_v2",
+            )
+            x_axis_choice = st.radio(
+                "x axis",
+                ["season", "player"],
+                horizontal=True,
+                help=(
+                    "season = calendar day of the season; "
+                    "player = days since each player joined"
+                ),
+                key="players_x_axis",
             )
 
+        st.caption(f"plotting {len(picked)} players")
         if picked:
             st.plotly_chart(
-                charts.player_trajectories(exp.population, picked, metric),
+                charts.player_trajectories(
+                    exp.population,
+                    picked,
+                    metric,
+                    color_by=None if color_by == "none" else color_by,
+                    x_axis=x_axis_choice,
+                ),
                 use_container_width=True,
                 key="players_traj",
             )
@@ -153,12 +197,12 @@ with tab_players:
         slider_day = st.slider("snapshot day", 0, max_day, max_day, key="players_slider_day")
 
         presets = {
-            "experience vs observed_skill": ("experience", "observed_skill"),
-            "true_skill vs observed_skill": ("true_skill", "observed_skill"),
-            "true_skill vs gear": ("true_skill", "gear"),
-            "experience vs gear": ("experience", "gear"),
-            "matches_played vs observed_skill": ("matches_played", "observed_skill"),
-            "custom…": None,
+            "experience \u2192 observed_skill": ("experience", "observed_skill"),
+            "true_skill \u2192 observed_skill": ("true_skill", "observed_skill"),
+            "true_skill \u2192 gear": ("true_skill", "gear"),
+            "experience \u2192 gear": ("experience", "gear"),
+            "matches_played \u2192 observed_skill": ("matches_played", "observed_skill"),
+            "custom\u2026": None,
         }
         preset_choice = st.selectbox(
             "scatter pair", list(presets.keys()), index=0, key="scatter_preset"
