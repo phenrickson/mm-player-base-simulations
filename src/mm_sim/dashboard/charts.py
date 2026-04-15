@@ -155,12 +155,12 @@ def small_multiples(runs: RunList) -> go.Figure:
         hovermode="x unified",
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.08,
+            yanchor="top",
+            y=-0.12,
             xanchor="center",
             x=0.5,
         ),
-        margin=dict(t=120, r=40),
+        margin=dict(t=60, r=40, b=100),
     )
     return fig
 
