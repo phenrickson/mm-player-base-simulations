@@ -274,6 +274,7 @@ def _plot_rating_error(ax, experiments: list, colors) -> None:
 
 
 def _plot_blowout_share(ax, experiments: list, colors) -> None:
+    peak = 0.0
     for color, exp in zip(colors, experiments):
         agg = exp.aggregate
         days = agg["day"].to_numpy()
@@ -281,6 +282,8 @@ def _plot_blowout_share(ax, experiments: list, colors) -> None:
         blowouts = agg["blowouts"].to_numpy().astype(float)
         with np.errstate(invalid="ignore", divide="ignore"):
             share = np.where(matches > 0, blowouts / matches, np.nan)
+        if np.any(~np.isnan(share)):
+            peak = max(peak, float(np.nanmax(share)))
         ax.plot(
             days,
             share,
@@ -290,7 +293,7 @@ def _plot_blowout_share(ax, experiments: list, colors) -> None:
         )
     ax.set_xlabel("day")
     ax.set_ylabel("blowout share of matches")
-    ax.set_ylim(0, 1.02)
+    ax.set_ylim(0, max(0.05, peak * 1.2))
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, loc="upper right")
 

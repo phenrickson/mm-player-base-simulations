@@ -665,7 +665,8 @@ def _plot_match_quality_over_time(ax, aggregate: pl.DataFrame) -> None:
     ax.plot(days, share, linewidth=2, color=COLOR_LEFT)
     ax.set_xlabel("day")
     ax.set_ylabel("blowout share of matches")
-    ax.set_ylim(0, 1.02)
+    max_share = float(np.nanmax(share)) if np.any(~np.isnan(share)) else 0.0
+    ax.set_ylim(0, max(0.05, max_share * 1.2))
     ax.grid(True, alpha=0.3)
 
 
