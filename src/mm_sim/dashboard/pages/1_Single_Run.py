@@ -148,6 +148,7 @@ with tab_players:
                     "true_skill",
                     "experience",
                     "gear",
+                    "season_progress",
                     "matches_played",
                     "loss_streak",
                 ],
