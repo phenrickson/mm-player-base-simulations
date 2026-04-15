@@ -4,10 +4,8 @@
 #
 # Season name is computed as
 #   {season_days}d-{initial_size}p-{true_skill_distribution}-{season_suffix}
-# so it auto-updates when you change the underlying config. Edit
-# `season_suffix` to tag a research question; the mechanical parts
-# track config automatically.
-season_suffix = "asymmetric-progression"
+# so it auto-updates when you change the underlying config.
+season_suffix = "multi-team-extraction"
 
 [config]
 seed = 1999
@@ -16,31 +14,40 @@ season_days = 90
 [config.population]
 initial_size = 15000
 true_skill_distribution = "right_skewed"
-# Daily arrivals as a fraction of `initial_size`, frozen at startup.
-# 0.0067 with initial_size=15000 → 100 new players/day. Set to 0 for
-# a closed-cohort study.
 daily_new_player_fraction = 0.0067
 
 [config.parties]
-# Mix of solo/duo/trio parties. Must sum to 1.0.
 size_distribution = {1 = 0.5, 2 = 0.2, 3 = 0.3}
 
+[config.matchmaker]
+kind = "two_stage"
+lobby_size = 12
+teams_per_lobby = 4
+
+[config.matchmaker.team_formation]
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
+[config.matchmaker.lobby_assembly]
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
 [config.outcomes]
-# Gear contribution to match performance alongside true_skill.
-# 0.0 = gear is cosmetic; 0.5 = gear meaningfully affects outcomes.
+kind = "extraction"
 gear_weight = 0.5
+baseline_extract_prob = 0.4
+strength_sensitivity = 1.0
+
+[config.rating_updater]
+kind = "elo_extract"
+k_factor = 32.0
 
 [config.frequency]
 mean_matches_per_day = 5.0
 
 [config.churn]
 baseline_daily_quit_prob = 0.005
-loss_weight = 0.04 # losing increases probability of droppping
-blowout_loss_weight = 0.14 # blowout losses have a huge impact
+loss_weight = 0.04
+blowout_loss_weight = 0.14
 win_streak_weight = -0.02
-# New-player loss sensitivity: a player with 0 matches_played gets
-# (1 + new_player_bonus)x the loss/blowout impact; it ramps linearly
-# down to 1x at new_player_threshold matches.
 new_player_bonus = 0.75
 new_player_threshold = 15
 loss_streak_exp = 0.3
@@ -51,6 +58,16 @@ enabled = true
 
 [config.gear]
 transfer_enabled = true
+extract_growth = 0.003
+transfer_rate = 0.05
+strength_bonus = 1.0
+punching_down_floor = 0.2
+transfer_efficiency = 0.9
 
 [config.season_progression]
 enabled = true
+base_earn_per_season = 0.8
+concavity = 1.0
+participation_weight = 0.3
+extraction_weight = 0.5
+kill_weight = 0.2
