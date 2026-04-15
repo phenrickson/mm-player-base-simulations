@@ -1,0 +1,14 @@
+name = "gear_transfer_on"
+
+[config.parties]
+size_distribution = {1 = 1.0}
+
+[config.matchmaker]
+kind = "composite"
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
+[config.gear]
+transfer_enabled = true
+transfer_rate = 0.01
+transfer_rate_blowout = 0.04
+growth_per_match = 0.002
