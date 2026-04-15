@@ -16,7 +16,7 @@ from mm_sim.churn import apply_churn
 from mm_sim.config import SimulationConfig
 from mm_sim.experience import apply_experience_update
 from mm_sim.frequency import sample_matches_per_day
-from mm_sim.gear import apply_gear_update
+from mm_sim.gear import apply_gear_update, apply_gear_transfer_for_match
 from mm_sim.matchmaker.base import Matchmaker
 from mm_sim.matchmaker.composite_mm import CompositeRatingMatchmaker
 from mm_sim.matchmaker.random_mm import RandomMatchmaker
@@ -150,6 +150,22 @@ class SimulationEngine:
                     spawn_child(round_rng, f"lobby_{lobby_idx}"),
                 )
                 self.rating_updater.update(result, self.population)
+
+                winners_arr = np.array(
+                    lobby.teams[result.winning_team], dtype=np.int32
+                )
+                losers_arr = np.concatenate([
+                    np.array(team, dtype=np.int32)
+                    for team_idx, team in enumerate(lobby.teams)
+                    if team_idx != result.winning_team
+                ]) if len(lobby.teams) > 1 else np.array([], dtype=np.int32)
+                apply_gear_transfer_for_match(
+                    self.population,
+                    winners=winners_arr,
+                    losers=losers_arr,
+                    is_blowout=bool(result.is_blowout),
+                    cfg=self.cfg.gear,
+                )
 
                 matches_today += 1
                 if result.is_blowout:
