@@ -72,3 +72,7 @@ clean-experiments:
 # refresh the uv lock file
 lock:
     uv lock
+
+# Launch the Streamlit dashboard
+dashboard:
+    uv run streamlit run src/mm_sim/dashboard/app.py
