@@ -81,3 +81,33 @@ def load_run(
         version=version,
         experiments_dir=experiments_dir,
     )
+
+
+import streamlit as st
+
+
+@st.cache_data(show_spinner=False)
+def cached_list_seasons(experiments_dir_str: str) -> list[str]:
+    return list_seasons(Path(experiments_dir_str))
+
+
+@st.cache_data(show_spinner=False)
+def cached_list_scenarios(experiments_dir_str: str, season: str) -> list[str]:
+    return list_scenarios(Path(experiments_dir_str), season)
+
+
+@st.cache_data(show_spinner=False)
+def cached_list_versions(
+    experiments_dir_str: str, season: str, scenario: str
+) -> list[str]:
+    return list_versions(Path(experiments_dir_str), season, scenario)
+
+
+@st.cache_data(show_spinner="Loading experiment\u2026")
+def cached_load_run(
+    experiments_dir_str: str,
+    season: str,
+    scenario: str,
+    version: str,
+) -> Experiment:
+    return load_run(Path(experiments_dir_str), season, scenario, version)
