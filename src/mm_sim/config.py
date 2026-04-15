@@ -117,6 +117,20 @@ class SkillProgressionConfig(BaseModel):
     starting_true_skill_fraction: float = Field(0.3, ge=0.0, le=1.0)
 
 
+class SeasonProgressionConfig(BaseModel):
+    """Per-player season pass progress and its churn pressure."""
+
+    enabled: bool = False
+    earn_per_match: float = Field(0.02, ge=0.0)
+    # Expected curve: expected(d) = 1 - exp(-curve_steepness * d/season_days)
+    curve_steepness: float = Field(3.0, gt=0.0)
+    # Churn additions when player is behind expected progression.
+    behind_weight: float = Field(0.02, ge=0.0)
+    # Churn additions when player is ahead (maxed out early) AND day/season < cutoff.
+    boredom_weight: float = Field(0.01, ge=0.0)
+    boredom_cutoff: float = Field(0.7, ge=0.0, le=1.0)
+
+
 class SimulationConfig(BaseModel):
     seed: int = 1999
     season_days: int = Field(90, gt=0)
@@ -132,4 +146,7 @@ class SimulationConfig(BaseModel):
     gear: GearConfig = Field(default_factory=GearConfig)
     skill_progression: SkillProgressionConfig = Field(
         default_factory=SkillProgressionConfig
+    )
+    season_progression: SeasonProgressionConfig = Field(
+        default_factory=SeasonProgressionConfig
     )
