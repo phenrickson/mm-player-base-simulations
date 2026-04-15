@@ -1,9 +1,6 @@
 name = "skill_only"
 category = "matchmaker"
 
-[config.parties]
-size_distribution = {1 = 1.0}
-
 [config.matchmaker]
 kind = "composite"
 composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}

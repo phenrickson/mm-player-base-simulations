@@ -2,11 +2,12 @@
 # scenario files can override any of these by setting the same key.
 # This file is not itself a scenario (no `name` field).
 #
-# `season` names the grouping under experiments/. All scenarios run
-# against this defaults file land in experiments/<season>/<scenario>/vN/.
-# Change this when you start a new research session with different
-# base settings so results don't get mixed with older runs.
-season = "90-days-asymmetric-progression"
+# Season name is computed as
+#   {season_days}d-{initial_size}p-{true_skill_distribution}-{season_suffix}
+# so it auto-updates when you change the underlying config. Edit
+# `season_suffix` to tag a research question; the mechanical parts
+# track config automatically.
+season_suffix = "asymmetric-progression"
 
 [config]
 seed = 1999

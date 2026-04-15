@@ -1,15 +1,10 @@
 name = "skill_gear_composite"
-category = "base"
+category = "matchmaker"
 
-[config.parties]
-size_distribution = {1 = 1.0}
+# Composite matchmaker balancing skill and gear. Gear is meaningful in
+# match outcomes (gear_weight=0.5 from defaults), so MM tries to match
+# both axes.
 
 [config.matchmaker]
 kind = "composite"
-composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
-
-[config.outcomes]
-gear_weight = 0.5
-
-[config.gear]
-transfer_enabled = true
+composite_weights = {skill = 0.8, experience = 0.0, gear = 0.2}
