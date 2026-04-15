@@ -155,6 +155,9 @@ def load_scenarios_dir(
     for path in sorted(base.glob("*.toml")):
         if path.name == DEFAULTS_FILENAME:
             continue
+        raw = tomllib.loads(path.read_text())
+        if "sweep" in raw:
+            continue  # sweep TOMLs are not scenarios
         scenario = Scenario.from_toml_file(path, defaults_config=defaults_config)
         scenarios[scenario.name] = scenario
     return scenarios

@@ -1,0 +1,14 @@
+name = "skill_gear_composite"
+
+[config.parties]
+size_distribution = {1 = 1.0}
+
+[config.matchmaker]
+kind = "composite"
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
+[config.outcomes]
+gear_weight = 0.5
+
+[config.gear]
+transfer_enabled = true

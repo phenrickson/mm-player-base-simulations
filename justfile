@@ -37,7 +37,7 @@ scenarios:
 
 # list scenario files available to run
 scenarios-list:
-    @uv run python -c "import glob, os; names = [os.path.splitext(os.path.basename(p))[0] for p in sorted(glob.glob('scenarios/*.toml'))]; print('\n'.join(names) if names else 'no scenarios/ directory yet')"
+    @uv run python -c "import glob, os, tomllib; names=[]; [names.append(os.path.splitext(os.path.basename(p))[0]) for p in sorted(glob.glob('scenarios/*.toml')) if os.path.basename(p) != 'defaults.toml' and 'sweep' not in tomllib.loads(open(p).read())]; print('\n'.join(names) if names else 'no scenarios/ directory yet')"
 
 # regenerate plots for a saved experiment (latest version by default, or pass --version v2)
 plots NAME *ARGS:
@@ -47,6 +47,18 @@ plots NAME *ARGS:
 # remaining args are scenario names. with no args, uses the current season.
 compare *ARGS:
     uv run python -m mm_sim.cli compare {{ARGS}}
+
+# run a parameter sweep by name (looks up scenarios/NAME.toml)
+sweep NAME:
+    uv run python -m mm_sim.cli sweep {{NAME}}
+
+# list sweep files available to run
+sweeps-list:
+    @uv run python -m mm_sim.cli sweeps
+
+# regenerate sweep comparison plots (latest version by default, or pass --version v2)
+sweep-compare NAME *ARGS:
+    uv run python -m mm_sim.cli sweep-compare {{NAME}} {{ARGS}}
 
 # delete ALL saved experiments (prompts for confirmation)
 clean-experiments:

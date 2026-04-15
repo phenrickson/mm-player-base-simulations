@@ -22,7 +22,14 @@ from mm_sim.experiments import (
     load_experiment,
 )
 from mm_sim.plots import generate_plots_for_experiment_dir
-from mm_sim.scenarios import run_all_scenarios, run_scenario
+from mm_sim.scenarios import (
+    DEFAULT_SCENARIOS_DIR,
+    load_season_name,
+    run_all_scenarios,
+    run_scenario,
+)
+from mm_sim.sweep_plots import plot_sweep
+from mm_sim.sweeps import list_sweeps, run_sweep
 
 
 def cmd_experiments(args: argparse.Namespace) -> None:
@@ -81,6 +88,38 @@ def cmd_plots(args: argparse.Namespace) -> None:
         print(path)
 
 
+def cmd_sweep(args: argparse.Namespace) -> None:
+    result = run_sweep(args.name)
+    plot_sweep(result.sweep_dir)
+    print(f"sweep saved: {result.sweep_dir}")
+    print(f"points: {len(result.point_experiments)}")
+
+
+def cmd_sweeps(args: argparse.Namespace) -> None:
+    for name in list_sweeps():
+        print(name)
+
+
+def cmd_sweep_compare(args: argparse.Namespace) -> None:
+    season = load_season_name(DEFAULT_SCENARIOS_DIR)
+    sweep_parent = Path(DEFAULT_EXPERIMENTS_DIR) / season / args.name
+    if not sweep_parent.exists():
+        raise FileNotFoundError(f"sweep not found: {sweep_parent}")
+    if args.version is None:
+        versions = sorted(
+            p for p in sweep_parent.iterdir() if p.name.startswith("v")
+        )
+        if not versions:
+            raise FileNotFoundError(f"no versions under {sweep_parent}")
+        sweep_dir = versions[-1]
+    else:
+        sweep_dir = sweep_parent / args.version
+        if not sweep_dir.exists():
+            raise FileNotFoundError(f"version not found: {sweep_dir}")
+    plot_sweep(sweep_dir)
+    print(f"regenerated plots: {sweep_dir / 'plots'}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mm_sim")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -119,6 +158,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.set_defaults(func=cmd_compare)
+
+    p = sub.add_parser("sweep", help="run a parameter sweep by name")
+    p.add_argument("name")
+    p.set_defaults(func=cmd_sweep)
+
+    p = sub.add_parser("sweeps", help="list sweep files in scenarios/")
+    p.set_defaults(func=cmd_sweeps)
+
+    p = sub.add_parser(
+        "sweep-compare",
+        help="regenerate sweep comparison plots (latest version by default)",
+    )
+    p.add_argument("name")
+    p.add_argument("--version", default=None)
+    p.set_defaults(func=cmd_sweep_compare)
 
     return parser
 
