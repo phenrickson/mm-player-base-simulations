@@ -215,3 +215,74 @@ values = [0.5, 1.0]
 
     assert result.sweep_dir == sweep_dir
     assert len(result.point_experiments) == 2
+
+
+def test_plot_sweep_1d_produces_plots(tmp_path):
+    from mm_sim.sweep_plots import plot_sweep
+    from mm_sim.sweeps import run_sweep
+
+    scenarios_dir = tmp_path / "scenarios"
+    scenarios_dir.mkdir()
+    (scenarios_dir / "defaults.toml").write_text("""
+season = "test-season"
+[config]
+seed = 1
+season_days = 2
+[config.population]
+initial_size = 50
+daily_new_player_fraction = 0.0
+""")
+    (scenarios_dir / "sweep_mini.toml").write_text("""
+name = "sweep_mini"
+base_scenario = "defaults"
+
+[[sweep.grid]]
+parameter = "config.matchmaker.composite_weights.skill"
+values = [0.5, 1.0]
+""")
+    experiments_dir = tmp_path / "experiments"
+    result = run_sweep(
+        "sweep_mini", scenarios_dir=scenarios_dir,
+        experiments_dir=experiments_dir,
+    )
+    plot_sweep(result.sweep_dir)
+    plots_dir = result.sweep_dir / "plots"
+    assert plots_dir.exists()
+    assert (plots_dir / "final_metrics.png").exists()
+
+
+def test_plot_sweep_2d_produces_heatmap(tmp_path):
+    from mm_sim.sweep_plots import plot_sweep
+    from mm_sim.sweeps import run_sweep
+
+    scenarios_dir = tmp_path / "scenarios"
+    scenarios_dir.mkdir()
+    (scenarios_dir / "defaults.toml").write_text("""
+season = "test-season"
+[config]
+seed = 1
+season_days = 2
+[config.population]
+initial_size = 50
+daily_new_player_fraction = 0.0
+""")
+    (scenarios_dir / "sweep_grid.toml").write_text("""
+name = "sweep_grid"
+base_scenario = "defaults"
+
+[[sweep.grid]]
+parameter = "config.matchmaker.composite_weights.skill"
+values = [0.5, 1.0]
+
+[[sweep.grid]]
+parameter = "config.matchmaker.composite_weights.gear"
+values = [0.0, 0.5]
+""")
+    experiments_dir = tmp_path / "experiments"
+    result = run_sweep(
+        "sweep_grid", scenarios_dir=scenarios_dir,
+        experiments_dir=experiments_dir,
+    )
+    plot_sweep(result.sweep_dir)
+    plots_dir = result.sweep_dir / "plots"
+    assert (plots_dir / "heatmaps.png").exists()
