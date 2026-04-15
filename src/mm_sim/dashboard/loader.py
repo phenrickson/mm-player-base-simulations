@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import streamlit as st
+
 from mm_sim.experiments import Experiment, load_experiment
 
 
@@ -81,9 +83,6 @@ def load_run(
         version=version,
         experiments_dir=experiments_dir,
     )
-
-
-import streamlit as st
 
 
 @st.cache_data(show_spinner=False)
