@@ -8,11 +8,14 @@ saved under experiments/<season>/<sweep_name>/vN/points/.
 
 from __future__ import annotations
 
+import copy
 import itertools
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from mm_sim.config import SimulationConfig
 
 
 def set_nested(d: dict, path: str, value: Any) -> None:
@@ -102,3 +105,14 @@ class SweepSpec:
             ]
             label = f"p{i:04d}_" + "_".join(label_parts)
             yield SweepPoint(index=i, label=label, overrides=overrides)
+
+
+def materialize_point(base_dict: dict, point: SweepPoint) -> SimulationConfig:
+    """Apply the point's overrides onto a deep copy of base_dict, then
+    validate as SimulationConfig. base_dict must be shaped as
+    `{"config": {...}}` — overrides use full "config.x.y" paths.
+    """
+    d = copy.deepcopy(base_dict)
+    for path, value in point.overrides.items():
+        set_nested(d, path, value)
+    return SimulationConfig.model_validate(d.get("config", {}))

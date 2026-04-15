@@ -127,3 +127,36 @@ values = [1, 2]
 """)
     with pytest.raises(ValueError):
         SweepSpec.from_toml_file(toml)
+
+
+def test_materialize_point_applies_overrides():
+    from mm_sim.sweeps import SweepPoint, materialize_point
+
+    base_dict = {"config": {"matchmaker": {
+        "kind": "composite",
+        "composite_weights": {"skill": 1.0, "experience": 0.0, "gear": 0.0},
+    }}}
+    point = SweepPoint(
+        index=0,
+        label="p0000_skill=0.5",
+        overrides={"config.matchmaker.composite_weights.skill": 0.5},
+    )
+    cfg = materialize_point(base_dict, point)
+    assert cfg.matchmaker.composite_weights == {
+        "skill": 0.5, "experience": 0.0, "gear": 0.0,
+    }
+
+
+def test_materialize_point_does_not_mutate_base():
+    from mm_sim.sweeps import SweepPoint, materialize_point
+
+    base_dict = {"config": {"matchmaker": {
+        "kind": "composite",
+        "composite_weights": {"skill": 1.0, "gear": 0.0},
+    }}}
+    point = SweepPoint(
+        index=0, label="x",
+        overrides={"config.matchmaker.composite_weights.skill": 0.1},
+    )
+    _ = materialize_point(base_dict, point)
+    assert base_dict["config"]["matchmaker"]["composite_weights"]["skill"] == 1.0
