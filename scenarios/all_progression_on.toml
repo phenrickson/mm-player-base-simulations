@@ -1,0 +1,27 @@
+name = "all_progression_on"
+
+[config.parties]
+size_distribution = {1 = 1.0}
+
+[config.matchmaker]
+kind = "composite"
+composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
+
+[config.skill_progression]
+enabled = true
+tau = 75.0
+noise_std = 0.02
+
+[config.gear]
+transfer_enabled = true
+transfer_rate = 0.01
+transfer_rate_blowout = 0.04
+growth_per_match = 0.002
+
+[config.season_progression]
+enabled = true
+earn_per_match = 0.02
+curve_steepness = 3.0
+behind_weight = 0.02
+boredom_weight = 0.01
+boredom_cutoff = 0.7
