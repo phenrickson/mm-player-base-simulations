@@ -48,6 +48,7 @@ def _line_chart(
     y_col: str,
     title: str,
     y_label: str,
+    fmt: str = ".3f",
 ) -> go.Figure:
     fig = go.Figure()
     for label, df in runs:
@@ -57,6 +58,7 @@ def _line_chart(
                 y=df[y_col].to_list(),
                 mode="lines",
                 name=label,
+                hovertemplate=f"{label}: %{{y:{fmt}}}<extra></extra>",
             )
         )
     fig.update_layout(
@@ -64,13 +66,15 @@ def _line_chart(
         xaxis_title="day",
         yaxis_title=y_label,
         hovermode="x unified",
+        yaxis=dict(tickformat=fmt),
     )
     return fig
 
 
 def population_over_time(runs: RunList) -> go.Figure:
     return _line_chart(
-        runs, "active_count", "Active population over time", "active players"
+        runs, "active_count", "Active population over time", "active players",
+        fmt=",.0f",
     )
 
 
@@ -81,6 +85,7 @@ def retention_over_time(runs: RunList) -> go.Figure:
         "retention",
         "Retention over time",
         "fraction of day-0 population",
+        fmt=".1%",
     )
 
 
@@ -118,10 +123,10 @@ def small_multiples(runs: RunList) -> go.Figure:
     Panels: active population, retention, match quality, rating error.
     """
     panels = [
-        ("Active population", "active_count", runs),
-        ("Retention", "retention", _apply_retention(runs)),
-        ("Match quality (win-prob dev)", "win_prob_dev_mean", runs),
-        ("Rating error", "rating_error_mean", runs),
+        ("Active population", "active_count", runs, ",.0f"),
+        ("Retention", "retention", _apply_retention(runs), ".1%"),
+        ("Match quality (win-prob dev)", "win_prob_dev_mean", runs, ".3f"),
+        ("Rating error", "rating_error_mean", runs, ".3f"),
     ]
     fig = make_subplots(
         rows=2,
@@ -133,7 +138,7 @@ def small_multiples(runs: RunList) -> go.Figure:
     )
     positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
     colors = _color_map([label for label, _ in runs])
-    for panel_idx, (_, y_col, panel_runs) in enumerate(panels):
+    for panel_idx, (_, y_col, panel_runs, fmt) in enumerate(panels):
         r, c = positions[panel_idx]
         for label, df in panel_runs:
             fig.add_trace(
@@ -145,11 +150,13 @@ def small_multiples(runs: RunList) -> go.Figure:
                     legendgroup=label,
                     showlegend=(panel_idx == 0),
                     line=dict(color=colors[label]),
+                    hovertemplate=f"{label}: %{{y:{fmt}}}<extra></extra>",
                 ),
                 row=r,
                 col=c,
             )
         fig.update_xaxes(title_text="day", row=r, col=c)
+        fig.update_yaxes(tickformat=fmt, row=r, col=c)
     fig.update_layout(
         height=750,
         hovermode="x unified",
