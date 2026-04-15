@@ -15,7 +15,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import json
+import logging
+
 from mm_sim.config import SimulationConfig
+from mm_sim.experiments import (
+    DEFAULT_EXPERIMENTS_DIR,
+    Experiment,
+    ExperimentRunner,
+)
+from mm_sim.scenarios import (
+    DEFAULT_SCENARIOS_DIR,
+    DEFAULTS_FILENAME,
+    _load_defaults_config,
+    load_scenario,
+    load_season_name,
+)
+
+log = logging.getLogger(__name__)
 
 
 def set_nested(d: dict, path: str, value: Any) -> None:
@@ -116,3 +133,117 @@ def materialize_point(base_dict: dict, point: SweepPoint) -> SimulationConfig:
     for path, value in point.overrides.items():
         set_nested(d, path, value)
     return SimulationConfig.model_validate(d.get("config", {}))
+
+
+@dataclass
+class SweepResult:
+    spec: SweepSpec
+    sweep_dir: Path
+    point_experiments: list[Experiment]
+
+
+def _base_config_dict(
+    base_scenario: str, scenarios_dir: Path
+) -> dict:
+    """Resolve the sweep's base scenario to a `{"config": {...}}` dict.
+
+    Overrides use full dotted paths starting with "config." so we wrap
+    the validated config into a "config" key to match.
+    """
+    if base_scenario == "defaults":
+        return {"config": _load_defaults_config(scenarios_dir)}
+    scenario = load_scenario(base_scenario, scenarios_dir=scenarios_dir)
+    return {"config": scenario.config.model_dump()}
+
+
+def _next_version(parent: Path) -> str:
+    if not parent.exists():
+        return "v1"
+    existing = sorted(
+        p.name for p in parent.iterdir() if p.name.startswith("v")
+    )
+    if not existing:
+        return "v1"
+    last = existing[-1]
+    try:
+        return f"v{int(last[1:]) + 1}"
+    except ValueError:
+        return "v1"
+
+
+def load_sweep(
+    name_or_path: str | Path,
+    scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
+) -> SweepSpec:
+    base = Path(scenarios_dir)
+    path = Path(name_or_path)
+    if path.suffix != ".toml":
+        path = base / f"{name_or_path}.toml"
+    if not path.exists():
+        raise FileNotFoundError(f"sweep not found: {path}")
+    return SweepSpec.from_toml_file(path)
+
+
+def list_sweeps(
+    scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
+) -> list[str]:
+    """Names of sweep TOMLs (files in scenarios_dir containing a `[sweep]` table)."""
+    base = Path(scenarios_dir)
+    if not base.exists():
+        return []
+    names = []
+    for path in sorted(base.glob("*.toml")):
+        if path.name == DEFAULTS_FILENAME:
+            continue
+        try:
+            raw = tomllib.loads(path.read_text())
+        except tomllib.TOMLDecodeError:
+            continue
+        if "sweep" in raw:
+            names.append(raw.get("name", path.stem))
+    return names
+
+
+def run_sweep(
+    name_or_path: str | Path,
+    scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
+    experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
+) -> SweepResult:
+    scenarios_dir = Path(scenarios_dir)
+    experiments_dir = Path(experiments_dir)
+    spec = load_sweep(name_or_path, scenarios_dir=scenarios_dir)
+    season = load_season_name(scenarios_dir)
+    sweep_parent = experiments_dir / season / spec.name
+    version = _next_version(sweep_parent)
+    sweep_dir = sweep_parent / version
+    (sweep_dir / "points").mkdir(parents=True, exist_ok=True)
+
+    base_dict = _base_config_dict(spec.base_scenario, scenarios_dir)
+    point_runner = ExperimentRunner(experiments_dir=sweep_dir / "points")
+    experiments: list[Experiment] = []
+    points_meta: list[dict] = []
+    for point in spec.iter_points():
+        sim_cfg = materialize_point(base_dict, point)
+        log.info("sweep %s: running %s", spec.name, point.label)
+        exp = point_runner.run(sim_cfg, name=point.label)
+        experiments.append(exp)
+        points_meta.append({
+            "index": point.index,
+            "label": point.label,
+            "overrides": point.overrides,
+            "experiment_name": exp.metadata.name,
+            "experiment_version": exp.metadata.version,
+        })
+
+    metadata = {
+        "name": spec.name,
+        "base_scenario": spec.base_scenario,
+        "mode": spec.mode,
+        "parameters": spec.parameters,
+        "value_lists": spec.value_lists,
+        "points": points_meta,
+    }
+    (sweep_dir / "sweep.json").write_text(json.dumps(metadata, indent=2))
+    return SweepResult(
+        spec=spec, sweep_dir=sweep_dir, point_experiments=experiments
+    )

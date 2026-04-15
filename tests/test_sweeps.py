@@ -160,3 +160,58 @@ def test_materialize_point_does_not_mutate_base():
     )
     _ = materialize_point(base_dict, point)
     assert base_dict["config"]["matchmaker"]["composite_weights"]["skill"] == 1.0
+
+
+def test_run_sweep_end_to_end(tmp_path):
+    import json
+    from mm_sim.sweeps import run_sweep
+
+    scenarios_dir = tmp_path / "scenarios"
+    scenarios_dir.mkdir()
+    (scenarios_dir / "defaults.toml").write_text("""
+season = "test-season"
+
+[config]
+seed = 7
+season_days = 2
+
+[config.population]
+initial_size = 100
+daily_new_player_fraction = 0.0
+""")
+    (scenarios_dir / "sweep_mini.toml").write_text("""
+name = "sweep_mini"
+base_scenario = "defaults"
+
+[[sweep.grid]]
+parameter = "config.matchmaker.composite_weights.skill"
+values = [0.5, 1.0]
+""")
+
+    experiments_dir = tmp_path / "experiments"
+    result = run_sweep(
+        "sweep_mini",
+        scenarios_dir=scenarios_dir,
+        experiments_dir=experiments_dir,
+    )
+
+    sweep_dir = experiments_dir / "test-season" / "sweep_mini" / "v1"
+    assert sweep_dir.exists()
+    assert (sweep_dir / "sweep.json").exists()
+    metadata = json.loads((sweep_dir / "sweep.json").read_text())
+    assert metadata["name"] == "sweep_mini"
+    assert metadata["mode"] == "grid"
+    assert len(metadata["points"]) == 2
+
+    points = list((sweep_dir / "points").iterdir())
+    assert len(points) == 2
+    # Each point is its own named experiment dir with a v1/ subdir inside.
+    for p in points:
+        version_dirs = list(p.iterdir())
+        assert len(version_dirs) == 1
+        v = version_dirs[0]
+        assert (v / "aggregate.parquet").exists()
+        assert (v / "config.json").exists()
+
+    assert result.sweep_dir == sweep_dir
+    assert len(result.point_experiments) == 2
