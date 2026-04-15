@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import numpy as np
-from scipy.stats import norm
 
 from mm_sim.config import OutcomeConfig
 from mm_sim.matchmaker.base import Lobby
 from mm_sim.outcomes.base import MatchResult
 from mm_sim.population import Population
+
+_STD_NORMAL = NormalDist()
 
 
 class ExtractionOutcomeGenerator:
@@ -17,7 +20,7 @@ class ExtractionOutcomeGenerator:
         # Noise sigma=1; threshold chosen so a team at match_mean extracts
         # with probability baseline_extract_prob.
         self._sigma = 1.0
-        self._threshold = float(norm.ppf(1.0 - cfg.baseline_extract_prob))
+        self._threshold = float(_STD_NORMAL.inv_cdf(1.0 - cfg.baseline_extract_prob))
 
     def generate(
         self, lobby: Lobby, pop: Population, rng: np.random.Generator
@@ -39,7 +42,10 @@ class ExtractionOutcomeGenerator:
 
         # Expected extract: P(roll > threshold | delta) under N(0, sigma) noise.
         z = (self._threshold - self.cfg.strength_sensitivity * deltas) / self._sigma
-        expected_extract = 1.0 - norm.cdf(z)
+        expected_extract = np.array(
+            [1.0 - _STD_NORMAL.cdf(float(zi)) for zi in z],
+            dtype=np.float32,
+        )
 
         # Attribute kills.
         kill_credits: list[tuple[int, int]] = []
