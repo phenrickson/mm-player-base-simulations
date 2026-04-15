@@ -341,6 +341,32 @@ def player_trajectories(
     return fig
 
 
+def player_scatter(
+    population: pl.DataFrame, day: int, x_col: str, y_col: str
+) -> go.Figure:
+    """Scatter of two per-player columns on a given day, with Pearson r."""
+    snap = population.filter(pl.col("day") == day).filter(pl.col("active"))
+    if snap.height == 0:
+        fig = go.Figure()
+        fig.update_layout(title=f"No active players on day {day}")
+        return fig
+    x = snap[x_col].to_list()
+    y = snap[y_col].to_list()
+    r = snap.select(pl.corr(x_col, y_col)).item()
+    fig = go.Figure(
+        go.Scattergl(
+            x=x, y=y, mode="markers",
+            marker=dict(size=4, opacity=0.4),
+            hovertemplate=f"{x_col}: %{{x:.3f}}<br>{y_col}: %{{y:.3f}}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"{y_col} vs {x_col} on day {day}  (r = {r:.3f}, n = {snap.height:,})",
+        xaxis_title=x_col, yaxis_title=y_col,
+    )
+    return fig
+
+
 def matches_metric_distribution(matches: pl.DataFrame, column: str) -> go.Figure:
     """Histogram of a per-match metric (lobby_range, team_gap, win_prob_dev)."""
     fig = go.Figure(

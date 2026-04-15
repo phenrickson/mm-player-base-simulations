@@ -135,6 +135,28 @@ with tab_players:
 
         max_day = int(exp.population["day"].max())
         slider_day = st.slider("snapshot day", 0, max_day, max_day, key="players_slider_day")
+
+        sc_col_a, sc_col_b = st.columns(2)
+        with sc_col_a:
+            x_col = st.selectbox(
+                "x axis",
+                ["experience", "gear", "true_skill", "matches_played"],
+                index=0,
+                key="scatter_x",
+            )
+        with sc_col_b:
+            y_col = st.selectbox(
+                "y axis",
+                ["observed_skill", "true_skill", "gear", "experience"],
+                index=0,
+                key="scatter_y",
+            )
+        st.plotly_chart(
+            charts.player_scatter(exp.population, slider_day, x_col, y_col),
+            use_container_width=True,
+            key="players_scatter",
+        )
+
         st.plotly_chart(
             charts.skill_distribution(exp.population, day=slider_day),
             use_container_width=True,
