@@ -84,3 +84,38 @@ def test_churn_pressure_boredom_only_before_cutoff():
     late = season_churn_pressure(progress, day=80, season_days=90, cfg=cfg)
     assert early[0] > 0
     assert late[0] == 0
+
+
+def test_churn_uses_season_pressure_when_enabled():
+    import numpy as np
+    from mm_sim.churn import apply_churn
+    from mm_sim.config import ChurnConfig, PopulationConfig, SeasonProgressionConfig
+    from mm_sim.population import Population
+
+    # Two identical populations; one with season pressure, one without.
+    cfg_pop = PopulationConfig(initial_size=2000, starting_true_skill_fraction=1.0)
+    pop_no_pressure = Population.create_initial(cfg_pop, np.random.default_rng(0))
+    pop_with_pressure = Population.create_initial(cfg_pop, np.random.default_rng(0))
+
+    # Make everyone have 0 progress while expected is ~0.6 — huge gap.
+    pop_no_pressure.season_progress[:] = 0.0
+    pop_with_pressure.season_progress[:] = 0.0
+
+    churn_cfg = ChurnConfig(baseline_daily_quit_prob=0.0)
+    season_cfg_on = SeasonProgressionConfig(
+        enabled=True, behind_weight=0.5, curve_steepness=3.0
+    )
+    season_cfg_off = SeasonProgressionConfig(enabled=False)
+
+    apply_churn(
+        pop_no_pressure, churn_cfg, np.random.default_rng(1),
+        day=30, season_days=90, season_cfg=season_cfg_off,
+    )
+    apply_churn(
+        pop_with_pressure, churn_cfg, np.random.default_rng(1),
+        day=30, season_days=90, season_cfg=season_cfg_on,
+    )
+
+    alive_no_pressure = int(pop_no_pressure.active.sum())
+    alive_with_pressure = int(pop_with_pressure.active.sum())
+    assert alive_with_pressure < alive_no_pressure

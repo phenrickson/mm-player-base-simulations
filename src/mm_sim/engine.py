@@ -28,6 +28,7 @@ from mm_sim.rating_updaters.base import RatingUpdater
 from mm_sim.rating_updaters.elo import EloUpdater
 from mm_sim.rating_updaters.kpm import KPMUpdater
 from mm_sim.seeding import make_rng, spawn_child
+from mm_sim.season_progression import apply_season_progression_update
 from mm_sim.skill_progression import apply_skill_progression_update
 from mm_sim.snapshot import DailySnapshotWriter
 
@@ -236,11 +237,17 @@ class SimulationEngine:
             self.cfg.skill_progression,
             spawn_child(day_rng, "skill_progression"),
         )
+        apply_season_progression_update(
+            self.population, total_matches, self.cfg.season_progression
+        )
 
         apply_churn(
             self.population,
             self.cfg.churn,
             spawn_child(day_rng, "churn"),
+            day=day,
+            season_days=self.cfg.season_days,
+            season_cfg=self.cfg.season_progression,
         )
 
         # New players arrive (assigned as solo parties for simplicity)
