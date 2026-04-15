@@ -13,7 +13,7 @@ from pathlib import Path
 
 import polars as pl
 
-from mm_sim.compare import compare_scenarios
+from mm_sim.compare import compare_scenarios, compare_sweep_with_references
 from mm_sim.experiments import (
     DEFAULT_EXPERIMENTS_DIR,
     _find_latest_season_for_experiment,
@@ -100,6 +100,16 @@ def cmd_sweeps(args: argparse.Namespace) -> None:
         print(name)
 
 
+def cmd_sweep_overlay(args: argparse.Namespace) -> None:
+    paths = compare_sweep_with_references(
+        sweep_name=args.name,
+        reference_scenarios=args.reference or None,
+        sweep_version=args.version,
+    )
+    for path in paths:
+        print(path)
+
+
 def cmd_sweep_compare(args: argparse.Namespace) -> None:
     season = load_season_name(DEFAULT_SCENARIOS_DIR)
     sweep_parent = Path(DEFAULT_EXPERIMENTS_DIR) / season / args.name
@@ -173,6 +183,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
     p.add_argument("--version", default=None)
     p.set_defaults(func=cmd_sweep_compare)
+
+    p = sub.add_parser(
+        "sweep-overlay",
+        help=(
+            "overlay sweep points with named reference scenarios on the "
+            "full comparison plot suite"
+        ),
+    )
+    p.add_argument("name", help="sweep name")
+    p.add_argument(
+        "--reference",
+        action="append",
+        default=[],
+        help="scenario name to overlay (may be repeated)",
+    )
+    p.add_argument("--version", default=None)
+    p.set_defaults(func=cmd_sweep_overlay)
 
     return parser
 

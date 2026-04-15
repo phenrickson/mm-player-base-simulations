@@ -1,0 +1,18 @@
+name = "sweep_mm_skill_weight"
+base_scenario = "all_progression_base"
+
+# Sweep the composite matchmaker's skill weight from 0.0 to 1.0 with gear
+# carrying the remainder — a pure skill-vs-gear tradeoff. Experience is
+# fixed at 0 so the two axes sum to 1 at every point.
+
+[[sweep.zip]]
+parameter = "config.matchmaker.composite_weights.skill"
+values = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+[[sweep.zip]]
+parameter = "config.matchmaker.composite_weights.gear"
+values = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
+
+[[sweep.zip]]
+parameter = "config.matchmaker.composite_weights.experience"
+values = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

@@ -130,8 +130,21 @@ def compare_scenarios(
         experiments, scenarios_dir=scenarios_dir
     )
 
-    written: list[Path] = []
+    return _render_comparison_panels(
+        experiments, colors, out_dir=out_dir, title_suffix=season
+    )
 
+
+def _render_comparison_panels(
+    experiments: list,
+    colors,
+    out_dir: Path,
+    title_suffix: str,
+) -> list[Path]:
+    """Render the full suite of comparison panels from pre-ordered
+    (experiments, colors). Returns the list of written paths.
+    """
+    written: list[Path] = []
     panels = [
         ("retention.png", "Day-0 cohort retention", _plot_retention),
         ("active_population.png", "Active player population", _plot_active_population),
@@ -167,7 +180,7 @@ def compare_scenarios(
     for filename, title, plot_fn in panels:
         fig, ax = plt.subplots(figsize=(10, 6))
         plot_fn(ax, experiments, colors)
-        fig.suptitle(f"{title} — {season}")
+        fig.suptitle(f"{title} — {title_suffix}")
         fig.tight_layout()
         path = out_dir / filename
         fig.savefig(path, dpi=120)
@@ -184,7 +197,7 @@ def compare_scenarios(
     axes[0, 1].set_title("Active player population")
     axes[1, 0].set_title("Rating error (|observed − true|)")
     axes[1, 1].set_title("Blowout share of matches")
-    fig.suptitle(f"Scenario comparison — {season}", fontsize=14)
+    fig.suptitle(f"Scenario comparison — {title_suffix}", fontsize=14)
     fig.tight_layout()
     overview_path = out_dir / "overview.png"
     fig.savefig(overview_path, dpi=120)
@@ -201,7 +214,7 @@ def compare_scenarios(
     axes[0, 1].set_title("Lobby std (true_skill)")
     axes[1, 0].set_title("Team mean true_skill gap")
     axes[1, 1].set_title("Favorite's expected win probability")
-    fig.suptitle(f"Match quality — {season}", fontsize=14)
+    fig.suptitle(f"Match quality — {title_suffix}", fontsize=14)
     fig.tight_layout()
     mq_path = out_dir / "match_quality.png"
     fig.savefig(mq_path, dpi=120)
@@ -216,7 +229,7 @@ def compare_scenarios(
     axes[0].set_title("new (<20 matches)")
     axes[1].set_title("casual (20–49 matches)")
     axes[2].set_title("experienced (≥50 matches)")
-    fig.suptitle(f"Daily churn rate by cohort — {season}", fontsize=14)
+    fig.suptitle(f"Daily churn rate by cohort — {title_suffix}", fontsize=14)
     fig.tight_layout()
     churn_path = out_dir / "churn_by_cohort.png"
     fig.savefig(churn_path, dpi=120)
@@ -225,6 +238,96 @@ def compare_scenarios(
 
     log.info("wrote %d comparison plot(s) to %s", len(written), out_dir)
     return written
+
+
+def compare_sweep_with_references(
+    sweep_name: str,
+    reference_scenarios: list[str] | None = None,
+    season: str | None = None,
+    sweep_version: str | None = None,
+    scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
+    experiments_dir: Path | str = DEFAULT_EXPERIMENTS_DIR,
+) -> list[Path]:
+    """Overlay a parameter sweep's points with named reference scenarios.
+
+    Sweep points are colored as a gradient along the sweep axis (light →
+    dark as the first-axis value grows) so the parameter progression is
+    visually obvious. References are drawn in a distinct hue family so
+    they don't blend into the gradient.
+
+    Writes plots into the sweep's own `_comparisons/` directory.
+    """
+    import json
+
+    if season is None:
+        season = load_season_name(scenarios_dir)
+    base = Path(experiments_dir)
+    sweep_parent = base / season / sweep_name
+    if not sweep_parent.exists():
+        raise FileNotFoundError(f"sweep not found: {sweep_parent}")
+    if sweep_version is None:
+        versions = sorted(
+            p for p in sweep_parent.iterdir() if p.name.startswith("v")
+        )
+        if not versions:
+            raise FileNotFoundError(f"no versions under {sweep_parent}")
+        sweep_dir = versions[-1]
+    else:
+        sweep_dir = sweep_parent / sweep_version
+    metadata = json.loads((sweep_dir / "sweep.json").read_text())
+    points_dir = sweep_dir / "points"
+
+    # Load each sweep point as an Experiment, remembering its first-axis value.
+    sweep_experiments: list = []
+    sweep_values: list[float] = []
+    first_param = metadata["parameters"][0]
+    for point in metadata["points"]:
+        exp = load_experiment(
+            point["experiment_name"],
+            version=point["experiment_version"],
+            season=None,
+            experiments_dir=points_dir,
+        )
+        sweep_experiments.append(exp)
+        sweep_values.append(float(point["overrides"][first_param]))
+
+    # Color sweep points along a gradient by their parameter value.
+    cmap = plt.get_cmap("viridis")
+    v_min = min(sweep_values)
+    v_max = max(sweep_values)
+    span = (v_max - v_min) or 1.0
+    sweep_colors = [
+        cmap(0.15 + 0.75 * (v - v_min) / span) for v in sweep_values
+    ]
+
+    # Load references and assign them a contrasting palette (reds).
+    reference_experiments: list = []
+    reference_colors: list = []
+    if reference_scenarios:
+        ref_cmap = plt.get_cmap("Reds")
+        ref_positions = (
+            np.linspace(0.55, 0.85, len(reference_scenarios))
+            if len(reference_scenarios) > 1 else [0.7]
+        )
+        for name, pos in zip(reference_scenarios, ref_positions):
+            reference_experiments.append(
+                load_experiment(
+                    name, season=season, experiments_dir=experiments_dir
+                )
+            )
+            reference_colors.append(ref_cmap(pos))
+
+    # Stable display order: sweep first (low→high), then references.
+    order = sorted(range(len(sweep_experiments)), key=lambda i: sweep_values[i])
+    experiments = [sweep_experiments[i] for i in order] + reference_experiments
+    colors = [sweep_colors[i] for i in order] + reference_colors
+
+    out_dir = sweep_dir / "_comparisons"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    title_suffix = f"{sweep_name} — {season}"
+    return _render_comparison_panels(
+        experiments, colors, out_dir=out_dir, title_suffix=title_suffix
+    )
 
 
 # ---- axis-based plot helpers --------------------------------------------

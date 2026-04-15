@@ -60,6 +60,11 @@ sweeps-list:
 sweep-compare NAME *ARGS:
     uv run python -m mm_sim.cli sweep-compare {{NAME}} {{ARGS}}
 
+# overlay a sweep with named reference scenarios, e.g.
+#   just sweep-overlay sweep_mm_skill_weight --reference random_mm_all_progression
+sweep-overlay NAME *ARGS:
+    uv run python -m mm_sim.cli sweep-overlay {{NAME}} {{ARGS}}
+
 # delete ALL saved experiments (prompts for confirmation)
 clean-experiments:
     @printf "delete everything under experiments/? [y/N] " && read ans && [ "$ans" = "y" ] && rm -rf experiments && echo "deleted." || echo "aborted."

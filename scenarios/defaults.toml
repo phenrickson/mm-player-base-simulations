@@ -6,11 +6,11 @@
 # against this defaults file land in experiments/<season>/<scenario>/vN/.
 # Change this when you start a new research session with different
 # base settings so results don't get mixed with older runs.
-season = "180-days-asymmetric"
+season = "90-days-asymmetric-progression"
 
 [config]
 seed = 1999
-season_days = 180
+season_days = 90
 
 [config.population]
 initial_size = 15000
