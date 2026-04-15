@@ -83,10 +83,26 @@ with tab_cohorts:
     if exp.population is None:
         st.info("No population.parquet saved for this run.")
     else:
+        st.caption("Cohorts are defined by each player's true-skill decile on day 0.")
         st.plotly_chart(
             charts.retention_by_skill_decile(exp.population),
             use_container_width=True,
             key="cohort_retention",
+        )
+        st.plotly_chart(
+            charts.cohort_metric_by_skill_decile(exp.population, "observed_skill"),
+            use_container_width=True,
+            key="cohort_observed",
+        )
+        st.plotly_chart(
+            charts.cohort_metric_by_skill_decile(exp.population, "experience"),
+            use_container_width=True,
+            key="cohort_experience",
+        )
+        st.plotly_chart(
+            charts.cohort_metric_by_skill_decile(exp.population, "gear"),
+            use_container_width=True,
+            key="cohort_gear",
         )
 
 # --- Players ----------------------------------------------------------

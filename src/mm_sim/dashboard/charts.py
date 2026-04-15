@@ -314,6 +314,43 @@ def retention_by_skill_decile(population: pl.DataFrame) -> go.Figure:
     return fig
 
 
+def cohort_metric_by_skill_decile(
+    population: pl.DataFrame, metric: str
+) -> go.Figure:
+    """Mean of `metric` per day, grouped by day-0 skill decile (active players only)."""
+    day0 = population.filter(pl.col("day") == 0).select(
+        ["player_id", "true_skill"]
+    )
+    deciles = day0.with_columns(
+        pl.col("true_skill").qcut(10, labels=[str(i) for i in range(10)]).alias("decile")
+    ).select(["player_id", "decile"])
+    merged = population.join(deciles, on="player_id", how="inner")
+    daily = (
+        merged.filter(pl.col("active"))
+        .group_by(["day", "decile"])
+        .agg(pl.col(metric).mean().alias("v"))
+        .sort(["decile", "day"])
+    )
+    fig = go.Figure()
+    for dec in sorted(daily["decile"].unique().to_list(), key=lambda s: int(s)):
+        sub = daily.filter(pl.col("decile") == dec)
+        fig.add_trace(
+            go.Scatter(
+                x=sub["day"].to_list(),
+                y=sub["v"].to_list(),
+                mode="lines",
+                name=f"d{dec}",
+                hovertemplate=f"decile {dec}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title=f"Mean {metric} by day-0 skill decile (active players)",
+        xaxis_title="day", yaxis_title=f"mean {metric}",
+        hovermode="x unified",
+    )
+    return fig
+
+
 def player_trajectories(
     population: pl.DataFrame, player_ids: list[int], metric: str
 ) -> go.Figure:
