@@ -22,6 +22,8 @@ class DefaultOutcomeGenerator:
         for team in lobby.teams:
             team_arr = np.array(team, dtype=np.int32)
             base = pop.true_skill[team_arr].astype(np.float32)
+            if self.cfg.gear_weight > 0.0:
+                base = base + self.cfg.gear_weight * pop.gear[team_arr].astype(np.float32)
             noise = rng.normal(
                 0.0, self.cfg.noise_std, size=len(team_arr)
             ).astype(np.float32)

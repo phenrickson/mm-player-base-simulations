@@ -65,6 +65,10 @@ class OutcomeConfig(BaseModel):
     kind: str = "default"
     noise_std: float = 0.25
     blowout_threshold: float = 30.0
+    # How much gear contributes to match performance alongside true_skill.
+    # 0.0 = gear is cosmetic (default, preserves pre-existing scenarios).
+    # Nonzero = effective_rating = true_skill + gear_weight * gear + noise.
+    gear_weight: float = Field(0.0, ge=0.0)
 
 
 class RatingUpdaterConfig(BaseModel):
