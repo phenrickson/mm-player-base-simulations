@@ -164,6 +164,7 @@ class DailySnapshotWriter:
                 "day": np.full(n, day, dtype=np.int32),
                 "player_id": np.arange(n, dtype=np.int32),
                 "true_skill": pop.true_skill.copy(),
+                "talent_ceiling": pop.talent_ceiling.copy(),
                 "observed_skill": pop.observed_skill.copy(),
                 "experience": pop.experience.copy(),
                 "gear": pop.gear.copy(),

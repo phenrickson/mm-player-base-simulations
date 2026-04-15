@@ -28,6 +28,7 @@ from mm_sim.rating_updaters.base import RatingUpdater
 from mm_sim.rating_updaters.elo import EloUpdater
 from mm_sim.rating_updaters.kpm import KPMUpdater
 from mm_sim.seeding import make_rng, spawn_child
+from mm_sim.skill_progression import apply_skill_progression_update
 from mm_sim.snapshot import DailySnapshotWriter
 
 
@@ -212,6 +213,12 @@ class SimulationEngine:
             total_matches,
             total_blowout_losses,
             self.cfg.gear,
+        )
+        apply_skill_progression_update(
+            self.population,
+            total_matches,
+            self.cfg.skill_progression,
+            spawn_child(day_rng, "skill_progression"),
         )
 
         apply_churn(
