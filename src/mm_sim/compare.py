@@ -82,6 +82,12 @@ def _assign_category_colors(
     return ordered_exps, colors
 
 
+def _is_sweep_dir(p: Path) -> bool:
+    """A sweep stores a sweep.json inside each version dir, and no top-level
+    metadata.json (which a scenario run would have)."""
+    return any(v.is_dir() and (v / "sweep.json").exists() for v in p.iterdir())
+
+
 def compare_scenarios(
     names: list[str] | None = None,
     season: str | None = None,
@@ -108,7 +114,9 @@ def compare_scenarios(
         names = sorted(
             p.name
             for p in season_dir.iterdir()
-            if p.is_dir() and not p.name.startswith("_")
+            if p.is_dir()
+            and not p.name.startswith("_")
+            and not _is_sweep_dir(p)
         )
     else:
         names = sorted(names)
