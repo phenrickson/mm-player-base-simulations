@@ -238,21 +238,32 @@ def experience_gear_over_time(aggregate: pl.DataFrame) -> go.Figure:
 
 
 def lobby_range_percentiles(aggregate: pl.DataFrame) -> go.Figure:
-    """p50/p90 of lobby skill range over time."""
+    """Lobby skill range over time: p50–p90 shaded band + mean line."""
     d = aggregate["day"].to_list()
     fig = go.Figure()
-    for col, name in [
-        ("lobby_range_mean", "mean"),
-        ("lobby_range_p50", "p50"),
-        ("lobby_range_p90", "p90"),
-    ]:
-        fig.add_trace(
-            go.Scatter(
-                x=d, y=aggregate[col].to_list(),
-                mode="lines", name=name,
-                hovertemplate=f"{name}: %{{y:.3f}}<extra></extra>",
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["lobby_range_p90"].to_list(),
+            mode="lines", line=dict(width=0), showlegend=False,
+            hovertemplate="p90: %{y:.3f}<extra></extra>",
         )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["lobby_range_p50"].to_list(),
+            mode="lines", fill="tonexty",
+            fillcolor="rgba(100,149,237,0.25)",
+            line=dict(width=0), name="p50–p90",
+            hovertemplate="p50: %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["lobby_range_mean"].to_list(),
+            mode="lines", name="mean", line=dict(color="royalblue"),
+            hovertemplate="mean: %{y:.3f}<extra></extra>",
+        )
+    )
     fig.update_layout(
         title="Lobby skill range over time",
         xaxis_title="day", yaxis_title="skill range",
