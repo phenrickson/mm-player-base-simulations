@@ -16,19 +16,29 @@ from mm_sim.churn import apply_churn
 from mm_sim.config import SimulationConfig
 from mm_sim.experience import apply_experience_update
 from mm_sim.frequency import sample_matches_per_day
-from mm_sim.gear import apply_gear_update, apply_gear_transfer_for_match
+from mm_sim.gear import (
+    apply_gear_update,
+    apply_gear_transfer_for_match,
+    apply_extraction_gear_update,
+)
 from mm_sim.matchmaker.base import Matchmaker
 from mm_sim.matchmaker.composite_mm import CompositeRatingMatchmaker
 from mm_sim.matchmaker.random_mm import RandomMatchmaker
+from mm_sim.matchmaker.two_stage import TwoStageMatchmaker
 from mm_sim.outcomes.base import OutcomeGenerator
 from mm_sim.outcomes.default import DefaultOutcomeGenerator
+from mm_sim.outcomes.extraction import ExtractionOutcomeGenerator
 from mm_sim.parties import assign_parties
 from mm_sim.population import Population
 from mm_sim.rating_updaters.base import RatingUpdater
 from mm_sim.rating_updaters.elo import EloUpdater
+from mm_sim.rating_updaters.elo_extract import ExtractEloUpdater
 from mm_sim.rating_updaters.kpm import KPMUpdater
 from mm_sim.seeding import make_rng, spawn_child
-from mm_sim.season_progression import apply_season_progression_update
+from mm_sim.season_progression import (
+    apply_season_progression_update,
+    apply_extraction_season_progression,
+)
 from mm_sim.skill_progression import apply_skill_progression_update
 from mm_sim.snapshot import DailySnapshotWriter
 
@@ -39,12 +49,16 @@ def _make_matchmaker(cfg: SimulationConfig) -> Matchmaker:
         return RandomMatchmaker(cfg.matchmaker)
     if kind == "composite":
         return CompositeRatingMatchmaker(cfg.matchmaker)
+    if kind == "two_stage":
+        return TwoStageMatchmaker(cfg.matchmaker)
     raise ValueError(f"unknown matchmaker kind: {kind}")
 
 
 def _make_outcome_generator(cfg: SimulationConfig) -> OutcomeGenerator:
     if cfg.outcomes.kind == "default":
         return DefaultOutcomeGenerator(cfg.outcomes)
+    if cfg.outcomes.kind == "extraction":
+        return ExtractionOutcomeGenerator(cfg.outcomes)
     raise ValueError(f"unknown outcome kind: {cfg.outcomes.kind}")
 
 
@@ -54,6 +68,8 @@ def _make_rating_updater(cfg: SimulationConfig) -> RatingUpdater:
         return EloUpdater(cfg.rating_updater)
     if kind == "kpm":
         return KPMUpdater(cfg.rating_updater)
+    if kind == "elo_extract":
+        return ExtractEloUpdater(cfg.rating_updater)
     raise ValueError(f"unknown rating updater kind: {kind}")
 
 
@@ -152,61 +168,121 @@ class SimulationEngine:
                 )
                 self.rating_updater.update(result, self.population)
 
-                winners_arr = np.array(
-                    lobby.teams[result.winning_team], dtype=np.int32
-                )
-                losers_arr = np.concatenate([
-                    np.array(team, dtype=np.int32)
-                    for team_idx, team in enumerate(lobby.teams)
-                    if team_idx != result.winning_team
-                ]) if len(lobby.teams) > 1 else np.array([], dtype=np.int32)
-                apply_gear_transfer_for_match(
-                    self.population,
-                    winners=winners_arr,
-                    losers=losers_arr,
-                    is_blowout=bool(result.is_blowout),
-                    cfg=self.cfg.gear,
-                )
+                if self.cfg.outcomes.kind == "extraction":
+                    apply_extraction_gear_update(
+                        self.population, result, self.cfg.gear
+                    )
+                    apply_extraction_season_progression(
+                        self.population,
+                        result,
+                        self.cfg.season_progression,
+                        mean_matches_per_day=self.cfg.frequency.mean_matches_per_day,
+                        season_days=self.cfg.season_days,
+                    )
+                    matches_today += 1
+                    flat_ids = result.flat_player_ids()
+                    total_matches[flat_ids] += 1
+                    for team_idx, team in enumerate(lobby.teams):
+                        team_ids = np.array(team, dtype=np.int32)
+                        if bool(result.extracted[team_idx]):
+                            total_wins[team_ids] += 1
+                            self.population.loss_streak[team_ids] = 0
+                        else:
+                            total_losses[team_ids] += 1
+                            self.population.loss_streak[team_ids] += 1
+                            killer = next(
+                                (k for (k, v) in result.kill_credits if v == team_idx),
+                                None,
+                            )
+                            if killer is not None:
+                                delta = (
+                                    result.team_strength[killer]
+                                    - result.team_strength[team_idx]
+                                )
+                                if delta > 1.0:
+                                    total_blowout_losses[team_ids] += 1
+                                    blowouts_today += 1
 
-                matches_today += 1
-                if result.is_blowout:
-                    blowouts_today += 1
+                    if result.extracted.any():
+                        winning_team = int(
+                            max(
+                                np.flatnonzero(result.extracted).tolist(),
+                                key=lambda i: float(result.team_strength[i]),
+                            )
+                        )
+                    else:
+                        winning_team = -1
+                    lobby_true = self.population.true_skill[flat_ids]
+                    team_trues = [
+                        self.population.true_skill[np.array(t, dtype=np.int32)]
+                        for t in lobby.teams
+                    ]
+                    self.snapshot_writer.record_match(
+                        day=day,
+                        match_idx=day_match_idx,
+                        lobby_true_skills=lobby_true,
+                        team_true_skills=team_trues,
+                        is_blowout=False,
+                        winning_team=winning_team,
+                    )
+                    day_match_idx += 1
+                else:
+                    # Legacy 2-team path — unchanged.
+                    winners_arr = np.array(
+                        lobby.teams[result.winning_team], dtype=np.int32
+                    )
+                    losers_arr = np.concatenate([
+                        np.array(team, dtype=np.int32)
+                        for team_idx, team in enumerate(lobby.teams)
+                        if team_idx != result.winning_team
+                    ]) if len(lobby.teams) > 1 else np.array([], dtype=np.int32)
+                    apply_gear_transfer_for_match(
+                        self.population,
+                        winners=winners_arr,
+                        losers=losers_arr,
+                        is_blowout=bool(result.is_blowout),
+                        cfg=self.cfg.gear,
+                    )
 
-                flat_ids = result.flat_player_ids()
-                total_matches[flat_ids] += 1
-
-                # Per-match quality metrics based on true_skill.
-                lobby_true = self.population.true_skill[flat_ids]
-                team_trues = [
-                    self.population.true_skill[np.array(team, dtype=np.int32)]
-                    for team in lobby.teams
-                ]
-                self.snapshot_writer.record_match(
-                    day=day,
-                    match_idx=day_match_idx,
-                    lobby_true_skills=lobby_true,
-                    team_true_skills=team_trues,
-                    is_blowout=bool(result.is_blowout),
-                    winning_team=int(result.winning_team),
-                )
-                day_match_idx += 1
-
-                winning_team_ids = np.array(
-                    lobby.teams[result.winning_team], dtype=np.int32
-                )
-                total_wins[winning_team_ids] += 1
-
-                # RESET streak on win
-                self.population.loss_streak[winning_team_ids] = 0
-
-                for team_idx, team in enumerate(lobby.teams):
-                    if team_idx == result.winning_team:
-                        continue
-                    losing_team_ids = np.array(team, dtype=np.int32)
-                    total_losses[losing_team_ids] += 1
-                    self.population.loss_streak[losing_team_ids] += 1
+                    matches_today += 1
                     if result.is_blowout:
-                        total_blowout_losses[losing_team_ids] += 1
+                        blowouts_today += 1
+
+                    flat_ids = result.flat_player_ids()
+                    total_matches[flat_ids] += 1
+
+                    # Per-match quality metrics based on true_skill.
+                    lobby_true = self.population.true_skill[flat_ids]
+                    team_trues = [
+                        self.population.true_skill[np.array(team, dtype=np.int32)]
+                        for team in lobby.teams
+                    ]
+                    self.snapshot_writer.record_match(
+                        day=day,
+                        match_idx=day_match_idx,
+                        lobby_true_skills=lobby_true,
+                        team_true_skills=team_trues,
+                        is_blowout=bool(result.is_blowout),
+                        winning_team=int(result.winning_team),
+                    )
+                    day_match_idx += 1
+
+                    winning_team_ids = np.array(
+                        lobby.teams[result.winning_team], dtype=np.int32
+                    )
+                    total_wins[winning_team_ids] += 1
+
+                    # RESET streak on win
+                    self.population.loss_streak[winning_team_ids] = 0
+
+                    for team_idx, team in enumerate(lobby.teams):
+                        if team_idx == result.winning_team:
+                            continue
+                        losing_team_ids = np.array(team, dtype=np.int32)
+                        total_losses[losing_team_ids] += 1
+                        self.population.loss_streak[losing_team_ids] += 1
+                        if result.is_blowout:
+                            total_blowout_losses[losing_team_ids] += 1
 
         # Update rolling windows (last-tick values)
         window = self.cfg.churn.rolling_window
@@ -225,20 +301,21 @@ class SimulationEngine:
             total_matches,
             normalization_max_matches=max(self.cfg.season_days * 5, 1),
         )
-        apply_gear_update(
-            self.population,
-            total_matches,
-            total_blowout_losses,
-            self.cfg.gear,
-        )
+        if self.cfg.outcomes.kind == "default":
+            apply_gear_update(
+                self.population,
+                total_matches,
+                total_blowout_losses,
+                self.cfg.gear,
+            )
+            apply_season_progression_update(
+                self.population, total_matches, self.cfg.season_progression
+            )
         apply_skill_progression_update(
             self.population,
             total_matches,
             self.cfg.skill_progression,
             spawn_child(day_rng, "skill_progression"),
-        )
-        apply_season_progression_update(
-            self.population, total_matches, self.cfg.season_progression
         )
 
         apply_churn(
