@@ -73,16 +73,16 @@ metric_fn = {
     "blowout share": charts.blowout_share_over_time,
 }[metric_choice]
 
-st.plotly_chart(metric_fn(runs), use_container_width=True)
+st.plotly_chart(metric_fn(runs), use_container_width=True, key="focus")
 
 st.subheader("Small multiples")
 c1, c2 = st.columns(2)
 with c1:
-    st.plotly_chart(charts.population_over_time(runs), use_container_width=True)
-    st.plotly_chart(charts.match_quality_over_time(runs), use_container_width=True)
+    st.plotly_chart(charts.population_over_time(runs), use_container_width=True, key="sm_population")
+    st.plotly_chart(charts.match_quality_over_time(runs), use_container_width=True, key="sm_match_quality")
 with c2:
-    st.plotly_chart(charts.retention_over_time(runs), use_container_width=True)
-    st.plotly_chart(charts.rating_error_over_time(runs), use_container_width=True)
+    st.plotly_chart(charts.retention_over_time(runs), use_container_width=True, key="sm_retention")
+    st.plotly_chart(charts.rating_error_over_time(runs), use_container_width=True, key="sm_rating_error")
 
 st.subheader("Run metadata")
 st.dataframe(meta_rows)
