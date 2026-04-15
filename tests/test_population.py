@@ -90,3 +90,27 @@ def test_add_new_players_extends_talent_ceiling():
     pop.add_new_players(5, cfg, np.random.default_rng(8), day=3)
     assert pop.talent_ceiling.shape[0] == before + 5
     assert pop.talent_ceiling.shape == pop.true_skill.shape
+
+
+def test_population_has_season_progress():
+    import numpy as np
+    from mm_sim.config import PopulationConfig
+    from mm_sim.population import Population
+
+    cfg = PopulationConfig(initial_size=50)
+    pop = Population.create_initial(cfg, np.random.default_rng(0))
+    assert pop.season_progress.shape == (50,)
+    assert pop.season_progress.dtype == np.float32
+    assert np.all(pop.season_progress == 0.0)
+
+
+def test_add_new_players_extends_season_progress():
+    import numpy as np
+    from mm_sim.config import PopulationConfig
+    from mm_sim.population import Population
+
+    cfg = PopulationConfig(initial_size=10)
+    pop = Population.create_initial(cfg, np.random.default_rng(0))
+    pop.add_new_players(5, cfg, np.random.default_rng(1), day=2)
+    assert pop.season_progress.shape == (15,)
+    assert np.all(pop.season_progress[-5:] == 0.0)

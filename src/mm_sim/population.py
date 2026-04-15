@@ -28,6 +28,7 @@ class Population:
     loss_streak: np.ndarray
     recent_blowout_losses: np.ndarray
     join_day: np.ndarray
+    season_progress: np.ndarray         # per-player [0, 1] season-pass progress
 
     @property
     def size(self) -> int:
@@ -55,6 +56,7 @@ class Population:
             loss_streak=np.zeros(n, dtype=np.int8),
             recent_blowout_losses=np.zeros(n, dtype=np.int8),
             join_day=np.zeros(n, dtype=np.int32),
+            season_progress=np.zeros(n, dtype=np.float32),
         )
 
     def add_new_players(
@@ -108,6 +110,9 @@ class Population:
         )
         self.join_day = np.concatenate(
             [self.join_day, np.full(count, day, dtype=np.int32)]
+        )
+        self.season_progress = np.concatenate(
+            [self.season_progress, np.zeros(count, dtype=np.float32)]
         )
         return np.arange(start, start + count, dtype=np.int32)
 
