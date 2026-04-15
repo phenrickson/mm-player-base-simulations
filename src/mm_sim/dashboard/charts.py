@@ -9,9 +9,38 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 import polars as pl
+from plotly.subplots import make_subplots
 
 
 RunList = list[tuple[str, pl.DataFrame]]
+
+
+def _apply_retention(runs: RunList) -> RunList:
+    out: RunList = []
+    for label, df in runs:
+        day0 = df["active_count"].item(0)
+        factor = 1.0 / day0 if day0 else 0.0
+        out.append(
+            (label, df.with_columns((pl.col("active_count") * factor).alias("retention")))
+        )
+    return out
+
+
+def _apply_blowout_share(runs: RunList) -> RunList:
+    out: RunList = []
+    for label, df in runs:
+        out.append(
+            (
+                label,
+                df.with_columns(
+                    pl.when(pl.col("matches_played") > 0)
+                    .then(pl.col("blowouts") / pl.col("matches_played"))
+                    .otherwise(0.0)
+                    .alias("blowout_share")
+                ),
+            )
+        )
+    return out
 
 
 def _line_chart(
@@ -47,15 +76,11 @@ def population_over_time(runs: RunList) -> go.Figure:
 
 def retention_over_time(runs: RunList) -> go.Figure:
     """Active count normalized by each run's day-0 value."""
-    normalized: RunList = []
-    for label, df in runs:
-        day0 = df["active_count"].item(0)
-        factor = 1.0 / day0 if day0 else 0.0
-        normalized.append(
-            (label, df.with_columns((pl.col("active_count") * factor).alias("retention")))
-        )
     return _line_chart(
-        normalized, "retention", "Retention over time", "fraction of day-0 population"
+        _apply_retention(runs),
+        "retention",
+        "Retention over time",
+        "fraction of day-0 population",
     )
 
 
@@ -79,22 +104,73 @@ def rating_error_over_time(runs: RunList) -> go.Figure:
 
 def blowout_share_over_time(runs: RunList) -> go.Figure:
     """blowouts / matches_played per day, with div-by-zero guarded."""
-    shared: RunList = []
-    for label, df in runs:
-        shared.append(
-            (
-                label,
-                df.with_columns(
-                    pl.when(pl.col("matches_played") > 0)
-                    .then(pl.col("blowouts") / pl.col("matches_played"))
-                    .otherwise(0.0)
-                    .alias("blowout_share")
-                ),
-            )
-        )
     return _line_chart(
-        shared, "blowout_share", "Blowout share over time", "blowouts / matches"
+        _apply_blowout_share(runs),
+        "blowout_share",
+        "Blowout share over time",
+        "blowouts / matches",
     )
+
+
+def small_multiples(runs: RunList) -> go.Figure:
+    """2x2 subplot grid with one shared legend across all panels.
+
+    Panels: active population, retention, match quality, rating error.
+    """
+    panels = [
+        ("Active population", "active_count", runs),
+        ("Retention", "retention", _apply_retention(runs)),
+        ("Match quality (win-prob dev)", "win_prob_dev_mean", runs),
+        ("Rating error", "rating_error_mean", runs),
+    ]
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        subplot_titles=[p[0] for p in panels],
+        shared_xaxes=False,
+        horizontal_spacing=0.08,
+        vertical_spacing=0.12,
+    )
+    positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+    colors = _color_map([label for label, _ in runs])
+    for panel_idx, (_, y_col, panel_runs) in enumerate(panels):
+        r, c = positions[panel_idx]
+        for label, df in panel_runs:
+            fig.add_trace(
+                go.Scatter(
+                    x=df["day"].to_list(),
+                    y=df[y_col].to_list(),
+                    mode="lines",
+                    name=label,
+                    legendgroup=label,
+                    showlegend=(panel_idx == 0),
+                    line=dict(color=colors[label]),
+                ),
+                row=r,
+                col=c,
+            )
+        fig.update_xaxes(title_text="day", row=r, col=c)
+    fig.update_layout(
+        height=700,
+        hovermode="x unified",
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1.0,
+            xanchor="left",
+            x=1.02,
+        ),
+        margin=dict(r=180),
+    )
+    return fig
+
+
+def _color_map(labels: list[str]) -> dict[str, str]:
+    """Stable color per label using Plotly's default qualitative palette."""
+    import plotly.express as px
+
+    palette = px.colors.qualitative.Plotly
+    return {label: palette[i % len(palette)] for i, label in enumerate(labels)}
 
 
 def skill_distribution(population: pl.DataFrame, day: int) -> go.Figure:
