@@ -132,8 +132,8 @@ with tab_players:
             metric = st.selectbox(
                 "metric",
                 [
-                    "true_skill",
                     "observed_skill",
+                    "true_skill",
                     "experience",
                     "gear",
                     "matches_played",
