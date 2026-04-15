@@ -70,3 +70,53 @@ def test_season_progression_earn_rate_nonnegative():
 def test_season_progression_boredom_cutoff_in_unit():
     with pytest.raises(Exception):
         SeasonProgressionConfig(boredom_cutoff=1.5)
+
+
+def test_outcome_config_extraction_defaults():
+    from mm_sim.config import OutcomeConfig
+
+    cfg = OutcomeConfig(kind="extraction")
+    assert cfg.kind == "extraction"
+    assert cfg.baseline_extract_prob == 0.4
+    assert cfg.strength_sensitivity == 1.0
+
+
+def test_matchmaker_config_two_stage_defaults():
+    from mm_sim.config import MatchmakerConfig
+
+    cfg = MatchmakerConfig()
+    assert cfg.lobby_size == 12
+    assert cfg.teams_per_lobby == 2
+    assert cfg.team_formation.composite_weights == {
+        "skill": 1.0, "experience": 0.0, "gear": 0.0
+    }
+    assert cfg.team_formation.max_rating_spread == 0.3
+    assert cfg.lobby_assembly.max_rating_spread == 0.3
+
+
+def test_gear_config_extraction_defaults():
+    from mm_sim.config import GearConfig
+
+    cfg = GearConfig()
+    assert cfg.extract_growth == 0.003
+    assert cfg.strength_bonus == 1.0
+    assert cfg.punching_down_floor == 0.2
+    assert cfg.transfer_efficiency == 0.9
+
+
+def test_season_progression_extraction_defaults():
+    from mm_sim.config import SeasonProgressionConfig
+
+    cfg = SeasonProgressionConfig()
+    assert cfg.base_earn_per_season == 0.8
+    assert cfg.concavity == 1.0
+    assert cfg.participation_weight == 0.3
+    assert cfg.extraction_weight == 0.5
+    assert cfg.kill_weight == 0.2
+
+
+def test_rating_updater_config_elo_extract():
+    from mm_sim.config import RatingUpdaterConfig
+
+    cfg = RatingUpdaterConfig(kind="elo_extract")
+    assert cfg.kind == "elo_extract"

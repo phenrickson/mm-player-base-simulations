@@ -42,13 +42,12 @@ class PartyConfig(BaseModel):
         return v
 
 
-class MatchmakerConfig(BaseModel):
-    kind: str = Field("composite", pattern="^(random|composite)$")
+class StageConfig(BaseModel):
+    """Policy for one stage of the two-stage matchmaker."""
+
     composite_weights: dict[str, float] = Field(
         default_factory=lambda: {"skill": 1.0, "experience": 0.0, "gear": 0.0}
     )
-    lobby_size: int = Field(12, gt=1)
-    teams_per_lobby: int = Field(2, gt=1)
     max_rating_spread: float = 0.3
     max_rating_spread_growth: float = 0.05
 
@@ -61,18 +60,41 @@ class MatchmakerConfig(BaseModel):
         return v
 
 
+class MatchmakerConfig(BaseModel):
+    kind: str = Field("composite", pattern="^(random|composite|two_stage)$")
+    composite_weights: dict[str, float] = Field(
+        default_factory=lambda: {"skill": 1.0, "experience": 0.0, "gear": 0.0}
+    )
+    lobby_size: int = Field(12, gt=1)
+    teams_per_lobby: int = Field(2, gt=1)
+    max_rating_spread: float = 0.3
+    max_rating_spread_growth: float = 0.05
+    team_formation: StageConfig = Field(default_factory=StageConfig)
+    lobby_assembly: StageConfig = Field(default_factory=StageConfig)
+
+    @field_validator("composite_weights")
+    @classmethod
+    def _weights_nonnegative(cls, v: dict[str, float]) -> dict[str, float]:
+        for k, val in v.items():
+            if val < 0:
+                raise ValueError(f"weight {k} must be >= 0, got {val}")
+        return v
+
+
 class OutcomeConfig(BaseModel):
-    kind: str = "default"
+    kind: str = Field("default", pattern="^(default|extraction)$")
     noise_std: float = 0.25
     blowout_threshold: float = 30.0
     # How much gear contributes to match performance alongside true_skill.
     # 0.0 = gear is cosmetic (default, preserves pre-existing scenarios).
     # Nonzero = effective_rating = true_skill + gear_weight * gear + noise.
     gear_weight: float = Field(0.0, ge=0.0)
+    baseline_extract_prob: float = Field(0.4, ge=0.0, le=1.0)
+    strength_sensitivity: float = Field(1.0, gt=0.0)
 
 
 class RatingUpdaterConfig(BaseModel):
-    kind: str = Field("elo", pattern="^(elo|kpm)$")
+    kind: str = Field("elo", pattern="^(elo|kpm|elo_extract)$")
     k_factor: float = 32.0
 
 
@@ -110,6 +132,11 @@ class GearConfig(BaseModel):
     # Legacy: direct drop on blowout loss. Kept for backwards-compat but only
     # applies when transfer_enabled is False.
     drop_on_blowout_loss: float = Field(0.05, ge=0.0)
+    # Extraction mode fields.
+    extract_growth: float = Field(0.003, ge=0.0)
+    strength_bonus: float = Field(1.0, ge=0.0)
+    punching_down_floor: float = Field(0.2, ge=0.0, le=1.0)
+    transfer_efficiency: float = Field(0.9, ge=0.0, le=1.0)
 
 
 class SkillProgressionConfig(BaseModel):
@@ -133,6 +160,12 @@ class SeasonProgressionConfig(BaseModel):
     # Churn additions when player is ahead (maxed out early) AND day/season < cutoff.
     boredom_weight: float = Field(0.01, ge=0.0)
     boredom_cutoff: float = Field(0.7, ge=0.0, le=1.0)
+    # Extraction mode fields.
+    base_earn_per_season: float = Field(0.8, gt=0.0)
+    concavity: float = Field(1.0, gt=0.0)
+    participation_weight: float = Field(0.3, ge=0.0)
+    extraction_weight: float = Field(0.5, ge=0.0)
+    kill_weight: float = Field(0.2, ge=0.0)
 
 
 class SimulationConfig(BaseModel):
