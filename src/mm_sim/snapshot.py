@@ -39,6 +39,18 @@ class DailySnapshotWriter:
             lobby_std_arr = np.array([m["lobby_std"] for m in day_matches])
             team_gap_arr = np.array([m["team_gap"] for m in day_matches])
             win_prob_dev_arr = np.array([m["win_prob_dev"] for m in day_matches])
+            # win_prob_dev is NaN for non-2-team lobbies (e.g. extraction with
+            # 4 teams). When every match in the day is NaN (all-NaN slice),
+            # np.nanmean/nanpercentile emit RuntimeWarning. Guard against that.
+            _wpd_valid = win_prob_dev_arr[~np.isnan(win_prob_dev_arr)]
+            if _wpd_valid.size > 0:
+                _wpd_mean = float(_wpd_valid.mean())
+                _wpd_p50 = float(np.percentile(_wpd_valid, 50))
+                _wpd_p90 = float(np.percentile(_wpd_valid, 90))
+            else:
+                _wpd_mean = float("nan")
+                _wpd_p50 = float("nan")
+                _wpd_p90 = float("nan")
             mq = {
                 "lobby_range_mean": float(lobby_range.mean()),
                 "lobby_range_p50": float(np.percentile(lobby_range, 50)),
@@ -47,9 +59,9 @@ class DailySnapshotWriter:
                 "team_gap_mean": float(team_gap_arr.mean()),
                 "team_gap_p50": float(np.percentile(team_gap_arr, 50)),
                 "team_gap_p90": float(np.percentile(team_gap_arr, 90)),
-                "win_prob_dev_mean": float(np.nanmean(win_prob_dev_arr)),
-                "win_prob_dev_p50": float(np.nanpercentile(win_prob_dev_arr, 50)),
-                "win_prob_dev_p90": float(np.nanpercentile(win_prob_dev_arr, 90)),
+                "win_prob_dev_mean": _wpd_mean,
+                "win_prob_dev_p50": _wpd_p50,
+                "win_prob_dev_p90": _wpd_p90,
             }
         else:
             mq = {
