@@ -1,8 +1,9 @@
 name = "random_mm"
 category = "matchmaker"
 
-# No matchmaking — lower-bound reference for skill-weight sweeps.
-# Inherits everything else (progression, party mix, gear_weight) from defaults.toml.
+# No matchmaking at either stage — lower-bound reference.
 
 [config.matchmaker]
 kind = "random"
+lobby_size = 12
+teams_per_lobby = 4

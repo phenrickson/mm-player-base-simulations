@@ -1,10 +1,13 @@
 name = "skill_gear_composite"
 category = "matchmaker"
 
-# Composite matchmaker balancing skill and gear. Gear is meaningful in
-# match outcomes (gear_weight=0.5 from defaults), so MM tries to match
-# both axes.
+# Composite matchmaker balancing skill and gear in both stages.
 
 [config.matchmaker]
-kind = "composite"
+kind = "two_stage"
+
+[config.matchmaker.team_formation]
+composite_weights = {skill = 0.8, experience = 0.0, gear = 0.2}
+
+[config.matchmaker.lobby_assembly]
 composite_weights = {skill = 0.8, experience = 0.0, gear = 0.2}

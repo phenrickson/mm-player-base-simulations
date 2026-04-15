@@ -2,5 +2,10 @@ name = "experience_only"
 category = "matchmaker"
 
 [config.matchmaker]
-kind = "composite"
+kind = "two_stage"
+
+[config.matchmaker.team_formation]
+composite_weights = {skill = 0.0, experience = 1.0, gear = 0.0}
+
+[config.matchmaker.lobby_assembly]
 composite_weights = {skill = 0.0, experience = 1.0, gear = 0.0}
