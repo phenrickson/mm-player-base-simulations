@@ -1,18 +1,28 @@
 name = "sweep_mm_skill_weight"
 
-# Sweep the composite matchmaker's skill weight from 0.0 to 1.0 with
-# experience carrying the remainder. Gear weight is pinned at 0 so the
-# two varying axes sum to 1 at every point. Inherits progression, party
-# mix, and outcomes.gear_weight from defaults.toml.
+# Sweep both team_formation and lobby_assembly skill weight from 0 to 1
+# with experience carrying the remainder. Gear weight fixed at 0.
 
 [[sweep.zip]]
-parameter = "config.matchmaker.composite_weights.skill"
+parameter = "config.matchmaker.team_formation.composite_weights.skill"
 values = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 [[sweep.zip]]
-parameter = "config.matchmaker.composite_weights.experience"
+parameter = "config.matchmaker.team_formation.composite_weights.experience"
 values = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
 
 [[sweep.zip]]
-parameter = "config.matchmaker.composite_weights.gear"
+parameter = "config.matchmaker.team_formation.composite_weights.gear"
+values = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+[[sweep.zip]]
+parameter = "config.matchmaker.lobby_assembly.composite_weights.skill"
+values = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+[[sweep.zip]]
+parameter = "config.matchmaker.lobby_assembly.composite_weights.experience"
+values = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
+
+[[sweep.zip]]
+parameter = "config.matchmaker.lobby_assembly.composite_weights.gear"
 values = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
