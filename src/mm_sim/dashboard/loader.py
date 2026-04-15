@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mm_sim.experiments import Experiment, load_experiment
+
 
 def list_seasons(experiments_dir: Path) -> list[str]:
     """Return season directory names, sorted alphabetically."""
@@ -59,3 +61,23 @@ def latest_version(
             f"no versions under {experiments_dir / season / scenario}"
         )
     return versions[-1]
+
+
+def load_run(
+    experiments_dir: Path,
+    season: str,
+    scenario: str,
+    version: str,
+) -> Experiment:
+    """Load a single experiment run.
+
+    Thin wrapper over `mm_sim.experiments.load_experiment`, with the
+    argument order reshuffled to match the dashboard's (season, scenario,
+    version) triple.
+    """
+    return load_experiment(
+        scenario,
+        season=season,
+        version=version,
+        experiments_dir=experiments_dir,
+    )

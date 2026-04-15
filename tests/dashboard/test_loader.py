@@ -49,3 +49,26 @@ def test_list_versions_returns_versions_oldest_first(experiments_tree: Path):
 
 def test_latest_version_returns_highest(experiments_tree: Path):
     assert loader.latest_version(experiments_tree, "season-a", "skill_only") == "v2"
+
+
+def test_load_run_uses_load_experiment(monkeypatch, experiments_tree: Path):
+    """load_run delegates to mm_sim.experiments.load_experiment."""
+    called = {}
+
+    def fake_load(name, season, version, experiments_dir):
+        called["args"] = (name, season, version, Path(experiments_dir))
+        return "sentinel"
+
+    monkeypatch.setattr(
+        "mm_sim.dashboard.loader.load_experiment", fake_load
+    )
+    result = loader.load_run(
+        experiments_tree, "season-a", "skill_only", "v2"
+    )
+    assert result == "sentinel"
+    assert called["args"] == (
+        "skill_only",
+        "season-a",
+        "v2",
+        experiments_tree,
+    )
