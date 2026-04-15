@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from mm_sim.config import (
+    GearConfig,
     PopulationConfig,
     SimulationConfig,
     SkillProgressionConfig,
@@ -34,3 +35,17 @@ def test_skill_progression_fraction_in_unit_interval():
 def test_population_starting_true_skill_fraction_default():
     cfg = PopulationConfig()
     assert cfg.starting_true_skill_fraction == 0.3
+
+
+def test_gear_transfer_defaults_disabled():
+    cfg = SimulationConfig()
+    assert cfg.gear.transfer_enabled is False
+    assert cfg.gear.transfer_rate == 0.01
+    assert cfg.gear.transfer_rate_blowout == 0.04
+
+
+def test_gear_transfer_rates_nonnegative():
+    with pytest.raises(Exception):
+        GearConfig(transfer_rate=-0.1)
+    with pytest.raises(Exception):
+        GearConfig(transfer_rate_blowout=-0.1)

@@ -95,9 +95,17 @@ class FrequencyConfig(BaseModel):
 
 
 class GearConfig(BaseModel):
-    growth_per_match: float = 0.005
-    drop_on_blowout_loss: float = 0.05
-    max_gear: float = 1.0
+    # Baseline drift: small gear gain per match played, regardless of outcome.
+    growth_per_match: float = Field(0.005, ge=0.0)
+    max_gear: float = Field(1.0, gt=0.0)
+    # Outcome-based transfer: when enabled, losing-team members transfer a
+    # fraction of their gear to winning-team members each match.
+    transfer_enabled: bool = False
+    transfer_rate: float = Field(0.01, ge=0.0)
+    transfer_rate_blowout: float = Field(0.04, ge=0.0)
+    # Legacy: direct drop on blowout loss. Kept for backwards-compat but only
+    # applies when transfer_enabled is False.
+    drop_on_blowout_loss: float = Field(0.05, ge=0.0)
 
 
 class SkillProgressionConfig(BaseModel):
