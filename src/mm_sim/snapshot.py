@@ -176,6 +176,7 @@ class DailySnapshotWriter:
                 "recent_blowout_losses": pop.recent_blowout_losses.astype(np.int16),
                 "loss_streak": pop.loss_streak.copy(),
                 "join_day": pop.join_day.copy(),
+                "season_progress": pop.season_progress.copy(),
             }
         )
         self._pop_frames.append(df)
