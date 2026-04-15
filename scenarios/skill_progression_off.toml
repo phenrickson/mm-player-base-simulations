@@ -1,4 +1,5 @@
 name = "skill_progression_off"
+category = "ablation"
 
 [config.parties]
 size_distribution = {1 = 1.0}

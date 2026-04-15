@@ -1,4 +1,5 @@
 name = "season_progression_on"
+category = "ablation"
 
 [config.parties]
 size_distribution = {1 = 1.0}

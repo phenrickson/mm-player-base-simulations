@@ -18,9 +18,68 @@ import numpy as np  # noqa: E402
 import polars as pl  # noqa: E402
 
 from mm_sim.experiments import DEFAULT_EXPERIMENTS_DIR, load_experiment
-from mm_sim.scenarios import DEFAULT_SCENARIOS_DIR, load_season_name
+from mm_sim.scenarios import (
+    DEFAULT_SCENARIOS_DIR,
+    load_scenarios_dir,
+    load_season_name,
+)
 
 log = logging.getLogger(__name__)
+
+
+# Each category gets a distinct matplotlib colormap. Variants within a
+# category are spaced along the colormap so they read as "same family,
+# different member." `other` stays neutral-grey so uncategorized
+# scenarios don't steal hues from real categories.
+_CATEGORY_COLORMAPS = {
+    "matchmaker": "Blues",
+    "ablation": "Oranges",
+    "sweep_point": "Greens",
+    "base": "Purples",
+    "other": "Greys",
+}
+
+
+def _assign_category_colors(
+    experiments: list,
+    scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
+) -> tuple[list, list[tuple]]:
+    """Order experiments by category, then return (ordered_experiments, colors).
+
+    Each experiment's color is drawn from its category's colormap, spaced
+    within the category so members are distinguishable but share a hue
+    family. Experiments whose scenario can't be found (e.g. stale runs
+    whose TOML was deleted) fall back to the `other` category.
+    """
+    scenarios = load_scenarios_dir(scenarios_dir)
+    by_category: dict[str, list] = {}
+    for exp in experiments:
+        scenario = scenarios.get(exp.metadata.name)
+        category = scenario.category if scenario is not None else "other"
+        by_category.setdefault(category, []).append(exp)
+
+    # Stable category order: known categories first (matchmaker, ablation,
+    # sweep_point, base), then any novel ones alphabetically, then "other".
+    known_order = ["matchmaker", "ablation", "sweep_point", "base"]
+    novel = sorted(c for c in by_category if c not in known_order and c != "other")
+    ordered_categories = [c for c in known_order if c in by_category] + novel
+    if "other" in by_category:
+        ordered_categories.append("other")
+
+    ordered_exps: list = []
+    colors: list[tuple] = []
+    for category in ordered_categories:
+        members = by_category[category]
+        cmap = plt.get_cmap(_CATEGORY_COLORMAPS.get(category, "Greys"))
+        # Sample away from the extremes (too light to read, too dark to tell apart).
+        n = len(members)
+        positions = (
+            np.linspace(0.45, 0.9, n) if n > 1 else np.array([0.7])
+        )
+        for exp, pos in zip(members, positions):
+            ordered_exps.append(exp)
+            colors.append(cmap(pos))
+    return ordered_exps, colors
 
 
 def compare_scenarios(
@@ -64,7 +123,12 @@ def compare_scenarios(
     out_dir = season_dir / "_comparisons"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    colors = plt.cm.viridis(np.linspace(0.1, 0.9, max(len(experiments), 1)))
+    # Reorder by category and assign category-keyed colors so matchmaker
+    # variants, ablation pairs, and sweep points read as distinct families
+    # in every comparison plot.
+    experiments, colors = _assign_category_colors(
+        experiments, scenarios_dir=scenarios_dir
+    )
 
     written: list[Path] = []
 

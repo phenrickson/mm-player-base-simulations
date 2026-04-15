@@ -1,4 +1,5 @@
 name = "random_mm"
+category = "matchmaker"
 
 [config.parties]
 size_distribution = {1 = 1.0}

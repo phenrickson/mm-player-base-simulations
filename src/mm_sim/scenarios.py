@@ -102,6 +102,7 @@ def defaults_toml_path(
 class Scenario:
     name: str
     config: SimulationConfig
+    category: str = "other"
 
     @classmethod
     def from_toml_file(
@@ -113,10 +114,11 @@ class Scenario:
         if "name" not in raw:
             raise ValueError(f"scenario {path} is missing required field 'name'")
         name = raw["name"]
+        category = raw.get("category", "other")
         scenario_config = raw.get("config", {})
         merged = _deep_merge(defaults_config or {}, scenario_config)
         config = SimulationConfig.model_validate(merged)
-        return cls(name=name, config=config)
+        return cls(name=name, config=config, category=category)
 
 
 def load_scenario(

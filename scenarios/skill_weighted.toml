@@ -1,4 +1,5 @@
 name = "skill_weighted"
+category = "matchmaker"
 
 [config.parties]
 size_distribution = {1 = 1.0}

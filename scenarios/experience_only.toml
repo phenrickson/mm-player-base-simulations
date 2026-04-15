@@ -1,4 +1,5 @@
 name = "experience_only"
+category = "matchmaker"
 
 [config.matchmaker]
 kind = "composite"
