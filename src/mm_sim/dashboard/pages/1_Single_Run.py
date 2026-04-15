@@ -136,21 +136,26 @@ with tab_players:
         max_day = int(exp.population["day"].max())
         slider_day = st.slider("snapshot day", 0, max_day, max_day, key="players_slider_day")
 
-        sc_col_a, sc_col_b = st.columns(2)
-        with sc_col_a:
-            x_col = st.selectbox(
-                "x axis",
-                ["experience", "gear", "true_skill", "matches_played"],
-                index=0,
-                key="scatter_x",
-            )
-        with sc_col_b:
-            y_col = st.selectbox(
-                "y axis",
-                ["observed_skill", "true_skill", "gear", "experience"],
-                index=0,
-                key="scatter_y",
-            )
+        presets = {
+            "experience vs observed_skill": ("experience", "observed_skill"),
+            "true_skill vs observed_skill": ("true_skill", "observed_skill"),
+            "true_skill vs gear": ("true_skill", "gear"),
+            "experience vs gear": ("experience", "gear"),
+            "matches_played vs observed_skill": ("matches_played", "observed_skill"),
+            "custom…": None,
+        }
+        preset_choice = st.selectbox(
+            "scatter pair", list(presets.keys()), index=0, key="scatter_preset"
+        )
+        cols_pop = [c for c in exp.population.columns if c not in ("day", "player_id", "party_id", "active")]
+        if presets[preset_choice] is None:
+            sc_col_a, sc_col_b = st.columns(2)
+            with sc_col_a:
+                x_col = st.selectbox("x axis", cols_pop, index=cols_pop.index("experience"), key="scatter_x")
+            with sc_col_b:
+                y_col = st.selectbox("y axis", cols_pop, index=cols_pop.index("observed_skill"), key="scatter_y")
+        else:
+            x_col, y_col = presets[preset_choice]
         st.plotly_chart(
             charts.player_scatter(exp.population, slider_day, x_col, y_col),
             use_container_width=True,
