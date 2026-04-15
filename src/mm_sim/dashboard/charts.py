@@ -172,6 +172,199 @@ def small_multiples(runs: RunList) -> go.Figure:
     return fig
 
 
+def skill_percentile_bands(aggregate: pl.DataFrame) -> go.Figure:
+    """p10/p50/p90 of true_skill over time, shaded band."""
+    d = aggregate["day"].to_list()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["true_skill_p90"].to_list(),
+            mode="lines", line=dict(width=0), showlegend=False,
+            hovertemplate="p90: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["true_skill_p10"].to_list(),
+            mode="lines", fill="tonexty",
+            fillcolor="rgba(100,149,237,0.25)",
+            line=dict(width=0), name="p10–p90",
+            hovertemplate="p10: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["true_skill_p50"].to_list(),
+            mode="lines", name="p50", line=dict(color="royalblue"),
+            hovertemplate="p50: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="True-skill percentiles over time",
+        xaxis_title="day", yaxis_title="true skill",
+        hovermode="x unified",
+    )
+    return fig
+
+
+def experience_gear_over_time(aggregate: pl.DataFrame) -> go.Figure:
+    """Mean experience and gear over time, dual-axis."""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    d = aggregate["day"].to_list()
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["experience_mean"].to_list(),
+            mode="lines", name="experience",
+            hovertemplate="experience: %{y:.2f}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=d, y=aggregate["gear_mean"].to_list(),
+            mode="lines", name="gear",
+            hovertemplate="gear: %{y:.2f}<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(
+        title="Mean experience and gear over time",
+        hovermode="x unified",
+        xaxis_title="day",
+    )
+    fig.update_yaxes(title_text="experience", secondary_y=False)
+    fig.update_yaxes(title_text="gear", secondary_y=True)
+    return fig
+
+
+def lobby_range_percentiles(aggregate: pl.DataFrame) -> go.Figure:
+    """p50/p90 of lobby skill range over time."""
+    d = aggregate["day"].to_list()
+    fig = go.Figure()
+    for col, name in [
+        ("lobby_range_mean", "mean"),
+        ("lobby_range_p50", "p50"),
+        ("lobby_range_p90", "p90"),
+    ]:
+        fig.add_trace(
+            go.Scatter(
+                x=d, y=aggregate[col].to_list(),
+                mode="lines", name=name,
+                hovertemplate=f"{name}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title="Lobby skill range over time",
+        xaxis_title="day", yaxis_title="skill range",
+        hovermode="x unified",
+    )
+    return fig
+
+
+def retention_by_skill_decile(population: pl.DataFrame) -> go.Figure:
+    """Retention (active fraction) per day, grouped by day-0 skill decile."""
+    day0 = population.filter(pl.col("day") == 0).select(
+        ["player_id", "true_skill"]
+    )
+    deciles = day0.with_columns(
+        pl.col("true_skill").qcut(10, labels=[str(i) for i in range(10)]).alias("decile")
+    ).select(["player_id", "decile"])
+    merged = population.join(deciles, on="player_id", how="inner")
+    base = (
+        merged.filter(pl.col("day") == 0)
+        .group_by("decile")
+        .agg(pl.col("active").sum().alias("base"))
+    )
+    daily = (
+        merged.group_by(["day", "decile"])
+        .agg(pl.col("active").sum().alias("active"))
+        .join(base, on="decile")
+        .with_columns((pl.col("active") / pl.col("base")).alias("retention"))
+        .sort(["decile", "day"])
+    )
+    fig = go.Figure()
+    for dec in sorted(daily["decile"].unique().to_list(), key=lambda s: int(s)):
+        sub = daily.filter(pl.col("decile") == dec)
+        fig.add_trace(
+            go.Scatter(
+                x=sub["day"].to_list(),
+                y=sub["retention"].to_list(),
+                mode="lines",
+                name=f"d{dec}",
+                hovertemplate=f"decile {dec}: %{{y:.1%}}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title="Retention by day-0 skill decile",
+        xaxis_title="day", yaxis_title="fraction still active",
+        yaxis=dict(tickformat=".0%"),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def player_trajectories(
+    population: pl.DataFrame, player_ids: list[int], metric: str
+) -> go.Figure:
+    """Plot one metric over time for each of the selected players."""
+    sub = population.filter(pl.col("player_id").is_in(player_ids)).sort("day")
+    fig = go.Figure()
+    for pid in player_ids:
+        ps = sub.filter(pl.col("player_id") == pid)
+        if ps.height == 0:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=ps["day"].to_list(),
+                y=ps[metric].to_list(),
+                mode="lines",
+                name=f"player {pid}",
+                hovertemplate=f"player {pid}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title=f"{metric} over time (selected players)",
+        xaxis_title="day", yaxis_title=metric,
+        hovermode="x unified",
+    )
+    return fig
+
+
+def matches_metric_distribution(matches: pl.DataFrame, column: str) -> go.Figure:
+    """Histogram of a per-match metric (lobby_range, team_gap, win_prob_dev)."""
+    fig = go.Figure(
+        go.Histogram(
+            x=matches[column].to_list(),
+            nbinsx=50,
+            hovertemplate=f"{column}: %{{x:.3f}}<br>count: %{{y}}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"Distribution of {column}",
+        xaxis_title=column, yaxis_title="matches",
+    )
+    return fig
+
+
+def matches_metric_over_time(matches: pl.DataFrame, column: str) -> go.Figure:
+    """Per-day mean of a per-match metric."""
+    daily = matches.group_by("day").agg(pl.col(column).mean().alias("v")).sort("day")
+    fig = go.Figure(
+        go.Scatter(
+            x=daily["day"].to_list(),
+            y=daily["v"].to_list(),
+            mode="lines",
+            hovertemplate=f"day %{{x}}: %{{y:.3f}}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"Mean {column} per day",
+        xaxis_title="day", yaxis_title=f"mean {column}",
+        hovermode="x",
+    )
+    return fig
+
+
 def _color_map(labels: list[str]) -> dict[str, str]:
     """Stable color per label using Plotly's default qualitative palette."""
     import plotly.express as px
