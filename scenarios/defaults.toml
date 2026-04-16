@@ -33,8 +33,10 @@ composite_weights = {skill = 1.0, experience = 0.0, gear = 0.0}
 [config.outcomes]
 kind = "extraction"
 gear_weight = 0.5
-baseline_extract_prob = 0.4
-strength_sensitivity = 1.0
+mean_extractors_per_match = 1.8
+p_zero_extract = 0.01
+p_all_extract = 0.03
+strength_sensitivity = 2.0
 
 [config.rating_updater]
 kind = "elo_extract"

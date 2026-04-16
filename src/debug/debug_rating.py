@@ -52,8 +52,10 @@ def main() -> None:
     oc_cfg = OutcomeConfig(
         kind="extraction",
         gear_weight=0.0,  # ignore gear for now — focus on skill signal
-        baseline_extract_prob=0.4,
-        strength_sensitivity=1.0,
+        mean_extractors_per_match=1.8,
+        p_zero_extract=0.01,
+        p_all_extract=0.03,
+        strength_sensitivity=2.0,
     )
     ru_cfg = RatingUpdaterConfig(kind="elo_extract", k_factor=0.1)
 
