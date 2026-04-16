@@ -27,17 +27,22 @@ from mm_sim.scenarios import (
 log = logging.getLogger(__name__)
 
 
-# Each category gets a distinct matplotlib colormap. Variants within a
-# category are spaced along the colormap so they read as "same family,
-# different member." `other` stays neutral-grey so uncategorized
-# scenarios don't steal hues from real categories.
+# Each category gets a matplotlib colormap. Non-sweep categories use
+# qualitative palettes so sibling scenarios are visually distinct
+# (e.g. skill_only vs experience_only vs random_mm all read differently
+# rather than as three shades of blue). Sweep points are ordered, so
+# they keep a sequential colormap. `other` stays neutral.
 _CATEGORY_COLORMAPS = {
-    "matchmaker": "Blues",
-    "ablation": "Oranges",
-    "sweep_point": "Greens",
-    "base": "Purples",
+    "matchmaker": "tab10",
+    "ablation": "Set2",
+    "sweep_point": "viridis",
+    "base": "tab20b",
     "other": "Greys",
 }
+# Qualitative colormaps return discrete colors by integer index; we still
+# want to sample them at evenly spaced positions like sequential maps,
+# which works because plt.get_cmap(...).__call__ accepts floats.
+_SEQUENTIAL_CATEGORIES = {"sweep_point", "other"}
 
 
 def _assign_category_colors(
@@ -70,12 +75,18 @@ def _assign_category_colors(
     colors: list[tuple] = []
     for category in ordered_categories:
         members = by_category[category]
-        cmap = plt.get_cmap(_CATEGORY_COLORMAPS.get(category, "Greys"))
-        # Sample away from the extremes (too light to read, too dark to tell apart).
+        cmap_name = _CATEGORY_COLORMAPS.get(category, "Greys")
+        cmap = plt.get_cmap(cmap_name)
         n = len(members)
-        positions = (
-            np.linspace(0.45, 0.9, n) if n > 1 else np.array([0.7])
-        )
+        if category in _SEQUENTIAL_CATEGORIES:
+            # Sequential: sample away from the too-light / too-dark extremes.
+            positions = (
+                np.linspace(0.45, 0.9, n) if n > 1 else np.array([0.7])
+            )
+        else:
+            # Qualitative: step through discrete slots for maximum contrast.
+            ncolors = getattr(cmap, "N", 10)
+            positions = (np.arange(n) % ncolors) / max(ncolors - 1, 1)
         for exp, pos in zip(members, positions):
             ordered_exps.append(exp)
             colors.append(cmap(pos))
