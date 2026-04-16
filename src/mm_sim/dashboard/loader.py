@@ -160,12 +160,15 @@ def _load_experiment_from_dir(exp_dir: Path) -> Experiment:
     population = pl.read_parquet(pop_path) if pop_path.exists() else None
     match_path = exp_dir / "matches.parquet"
     matches = pl.read_parquet(match_path) if match_path.exists() else None
+    mt_path = exp_dir / "match_teams.parquet"
+    match_teams = pl.read_parquet(mt_path) if mt_path.exists() else None
     return Experiment(
         metadata=metadata,
         config=cfg,
         aggregate=aggregate,
         population=population,
         matches=matches,
+        match_teams=match_teams,
     )
 
 

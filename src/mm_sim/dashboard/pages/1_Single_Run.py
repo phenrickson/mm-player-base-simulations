@@ -45,8 +45,22 @@ col2.metric("overall retention", f"{retention:.1%}")
 col3.metric("mean match quality (\u2193better)", f"{last_row['win_prob_dev_mean']:.3f}")
 col4.metric("mean rating error", f"{last_row['rating_error_mean']:.3f}")
 
-tab_overview, tab_agg, tab_cohorts, tab_players, tab_matches = st.tabs(
-    ["Overview", "Aggregate detail", "Cohorts", "Players", "Matches"]
+(
+    tab_overview,
+    tab_agg,
+    tab_cohorts,
+    tab_players,
+    tab_matches,
+    tab_player_detail,
+) = st.tabs(
+    [
+        "Overview",
+        "Aggregate detail",
+        "Cohorts",
+        "Players",
+        "Matches",
+        "Player detail",
+    ]
 )
 
 # --- Overview ---------------------------------------------------------
@@ -259,3 +273,267 @@ with tab_matches:
         )
         blowout_share = (exp.matches["is_blowout"].sum() / exp.matches.height)
         st.metric("overall blowout share", f"{blowout_share:.1%}")
+
+# --- Player detail ----------------------------------------------------
+with tab_player_detail:
+    if exp.match_teams is None or exp.match_teams.height == 0:
+        st.info(
+            "No match_teams.parquet for this run. Re-run the scenario after "
+            "the per-match-per-team logging commit."
+        )
+    elif exp.population is None:
+        st.info("No population.parquet saved for this run.")
+    else:
+        mt = exp.match_teams
+        all_ids = sorted(exp.population["player_id"].unique().to_list())
+
+        # Random button must run before the number_input is instantiated so
+        # it can seed the widget's session state.
+        col_pick, col_rand = st.columns([3, 1])
+        with col_rand:
+            st.write("")  # spacer
+            if st.button("random", key="player_detail_random"):
+                import random as _rnd
+                st.session_state["player_detail_id"] = int(_rnd.choice(all_ids))
+        with col_pick:
+            if "player_detail_id" not in st.session_state:
+                st.session_state["player_detail_id"] = int(all_ids[0])
+            picked_id = st.number_input(
+                "player_id",
+                min_value=int(min(all_ids)),
+                max_value=int(max(all_ids)),
+                step=1,
+                key="player_detail_id",
+            )
+
+        pid = int(picked_id)
+
+        # Player metadata
+        day0_row = (
+            exp.population.filter(
+                (pl.col("player_id") == pid) & (pl.col("day") == 0)
+            )
+            .head(1)
+        )
+        if day0_row.height == 0:
+            day0_row = (
+                exp.population.filter(pl.col("player_id") == pid)
+                .sort("day")
+                .head(1)
+            )
+        final_row = (
+            exp.population.filter(pl.col("player_id") == pid)
+            .sort("day")
+            .tail(1)
+        )
+        if day0_row.height == 0 or final_row.height == 0:
+            st.warning(f"player {pid} not found in population.")
+        else:
+            d0 = day0_row.row(0, named=True)
+            df = final_row.row(0, named=True)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("true_skill", f"{d0.get('true_skill', 0):.3f}")
+            c2.metric(
+                "observed_skill (final)",
+                f"{df.get('observed_skill', 0):.3f}",
+                delta=f"{df.get('observed_skill', 0) - d0.get('observed_skill', 0):+.3f}",
+            )
+            c3.metric("final gear", f"{df.get('gear', 0):.3f}")
+            c4.metric(
+                "season_progress (final)",
+                f"{df.get('season_progress', 0):.1%}",
+            )
+            c5, c6, c7, c8 = st.columns(4)
+            c5.metric("join_day", f"{int(d0.get('join_day', 0))}")
+            c6.metric(
+                "matches_played (final)",
+                f"{int(df.get('matches_played', 0))}",
+            )
+            c7.metric("active at end", "yes" if df.get("active", False) else "no")
+            c8.metric(
+                "talent_ceiling",
+                f"{d0.get('talent_ceiling', float('nan')):.3f}",
+            )
+
+            # Multi-panel trajectories on player-day axis. Only show days
+            # where the player was active (drop pre-join and post-churn rows).
+            traj = (
+                exp.population.filter(
+                    (pl.col("player_id") == pid) & pl.col("active")
+                )
+                .sort("day")
+                .with_columns(
+                    (pl.col("day") - pl.col("join_day")).alias("player_day")
+                )
+            )
+
+            # Run-wide bounds so axes stay consistent when switching players.
+            active_pop = exp.population.filter(pl.col("active"))
+
+            def _range(col: str, lo_floor: float | None = None,
+                       hi_ceil: float | None = None,
+                       pad: float = 0.05) -> tuple[float, float]:
+                if active_pop.height == 0 or col not in active_pop.columns:
+                    return (lo_floor or 0.0, hi_ceil or 1.0)
+                lo = float(active_pop[col].min())
+                hi = float(active_pop[col].max())
+                if lo == hi:
+                    hi = lo + 1.0
+                span = hi - lo
+                lo -= span * pad
+                hi += span * pad
+                if lo_floor is not None:
+                    lo = max(lo, lo_floor)
+                if hi_ceil is not None:
+                    hi = min(hi, hi_ceil)
+                return (lo, hi)
+
+            obs_range = _range("observed_skill")
+            true_range = _range("true_skill")
+            gear_range = _range("gear", lo_floor=0.0, hi_ceil=1.0)
+            sp_range = _range("season_progress", lo_floor=0.0, hi_ceil=1.0)
+            mp_range = _range("matches_played", lo_floor=0.0)
+
+            max_player_day = int(active_pop.select(
+                (pl.col("day") - pl.col("join_day")).max()
+            ).item() or 0)
+            pd_range = (0, max(max_player_day, 1))
+
+            # Net wins derived from match_teams: +1 per extract, -1 per death,
+            # cumulative. Shows as a single line that bobs up and down.
+            mt_player = mt.filter(
+                pl.col("player_ids").list.contains(pid)
+            ).sort(["day", "match_idx"])
+            if mt_player.height > 0:
+                cum = (
+                    mt_player.select(["day", "extracted"])
+                    .with_columns(
+                        pl.when(pl.col("extracted"))
+                        .then(1)
+                        .otherwise(-1)
+                        .cum_sum()
+                        .alias("net_wins")
+                    )
+                    .group_by("day")
+                    .agg(pl.col("net_wins").last())
+                    .sort("day")
+                )
+                join_day = int(d0.get("join_day", 0))
+                cum = cum.with_columns((pl.col("day") - join_day).alias("player_day"))
+            else:
+                cum = None
+
+            import plotly.graph_objects as _go
+            from plotly.subplots import make_subplots as _mks
+
+            panels = [
+                ("observed_skill", "observed_skill", traj),
+                ("true_skill", "true_skill", traj),
+                ("gear", "gear", traj),
+                ("season_progress", "season_progress", traj),
+            ]
+            cols, rows = 2, 3
+            fig = _mks(
+                rows=rows,
+                cols=cols,
+                subplot_titles=[
+                    "observed_skill", "true_skill",
+                    "gear", "season_progress",
+                    "net wins (+1 extract, -1 death)", "matches_played",
+                ],
+                horizontal_spacing=0.1,
+                vertical_spacing=0.12,
+            )
+            positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+            for (title, col, df), (r, c) in zip(panels, positions):
+                fig.add_trace(
+                    _go.Scatter(
+                        x=df["player_day"].to_list(),
+                        y=df[col].to_list(),
+                        mode="lines",
+                        line=dict(color="#6fa8dc"),
+                        showlegend=False,
+                    ),
+                    row=r, col=c,
+                )
+            # Net wins (row 3 col 1)
+            if cum is not None:
+                fig.add_trace(
+                    _go.Scatter(
+                        x=cum["player_day"].to_list(),
+                        y=cum["net_wins"].to_list(),
+                        mode="lines",
+                        line=dict(color="#6fa8dc"),
+                        showlegend=False,
+                    ),
+                    row=3, col=1,
+                )
+            # matches_played (row 3 col 2)
+            fig.add_trace(
+                _go.Scatter(
+                    x=traj["player_day"].to_list(),
+                    y=traj["matches_played"].to_list(),
+                    mode="lines",
+                    line=dict(color="#6fa8dc"),
+                    showlegend=False,
+                ),
+                row=3, col=2,
+            )
+            # Shared x axis (player day) across all panels.
+            for r in (1, 2, 3):
+                for c in (1, 2):
+                    fig.update_xaxes(range=pd_range, row=r, col=c)
+            # Per-metric y ranges (stable across players).
+            fig.update_yaxes(range=obs_range, row=1, col=1)
+            fig.update_yaxes(range=true_range, row=1, col=2)
+            fig.update_yaxes(range=gear_range, row=2, col=1)
+            fig.update_yaxes(range=sp_range, row=2, col=2)
+            fig.update_yaxes(range=mp_range, row=3, col=2)
+            # Net wins: symmetric around 0 based on matches_played max
+            # (a player could in principle be all-wins or all-losses).
+            nw_max = int(mp_range[1])
+            fig.update_yaxes(range=(-nw_max, nw_max), row=3, col=1)
+
+            fig.update_xaxes(title_text="player day", row=3, col=1)
+            fig.update_xaxes(title_text="player day", row=3, col=2)
+            fig.update_layout(
+                title=f"Player {pid} trajectories (x = day \u2212 join_day)",
+                height=750,
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig, use_container_width=True, key="pd_multi")
+
+            # Match history — filter rows whose player_ids list contains pid.
+            mt_player = mt.filter(
+                pl.col("player_ids").list.contains(pid)
+            ).sort(["day", "match_idx"])
+            st.subheader(f"Match history ({mt_player.height} matches)")
+            if mt_player.height == 0:
+                st.info("No matches recorded for this player.")
+            else:
+                display = mt_player.select(
+                    [
+                        "day",
+                        "match_idx",
+                        "team_idx",
+                        "mean_true_skill_before",
+                        "mean_observed_skill_before",
+                        "mean_gear_before",
+                        "team_strength",
+                        "expected_extract",
+                        "extracted",
+                        "kills",
+                        "killed_by_team",
+                    ]
+                ).to_pandas()
+                st.dataframe(display, use_container_width=True, height=500)
+
+                # Summary stats
+                extract_rate = float(mt_player["extracted"].mean())
+                total_kills = int(mt_player["kills"].sum())
+                mean_expected = float(mt_player["expected_extract"].mean())
+                st.caption(
+                    f"extract rate: {extract_rate:.1%} \u2022 "
+                    f"mean expected_extract: {mean_expected:.2f} \u2022 "
+                    f"total kills: {total_kills}"
+                )
