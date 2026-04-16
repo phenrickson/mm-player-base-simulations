@@ -8,7 +8,7 @@ from mm_sim.config import PopulationConfig, RatingUpdaterConfig
 from mm_sim.matchmaker.base import Lobby
 from mm_sim.outcomes.base import MatchResult
 from mm_sim.population import Population
-from mm_sim.rating_updaters.elo_extract import ELO_DIVISOR, ExtractEloUpdater
+from mm_sim.rating_updaters.elo_extract import ELO_SCALE, ExtractEloUpdater
 
 
 def _pop(n: int) -> Population:
@@ -48,8 +48,8 @@ def test_two_team_equal_rating_winner_gains_half_k_half():
     cfg = RatingUpdaterConfig(kind="elo_extract", k_factor=32.0)
     ExtractEloUpdater(cfg).update(result, pop)
     # pair_delta for winning team = 32 * (1 - 0.5) = 16
-    # per-player = 16 / 1 opp / 3 size / ELO_DIVISOR scale
-    expected_win = 32.0 * 0.5 / 3.0 / ELO_DIVISOR
+    # per-player = 16 / 1 opp / 3 size (no scale divisor in new model)
+    expected_win = 32.0 * 0.5 / 3.0
     np.testing.assert_allclose(
         pop.observed_skill[:3], [expected_win] * 3, atol=1e-5
     )
@@ -73,21 +73,20 @@ def test_both_teams_extract_is_draw_with_zero_delta_at_equal_rating():
 def test_higher_rated_team_gains_less_from_win():
     """Classic Elo: beating a weaker team earns less than beating a stronger one."""
     pop = _pop(6)
-    pop.observed_skill[:3] = ELO_DIVISOR  # team A is one divisor above B
+    pop.observed_skill[:3] = ELO_SCALE  # team A is one ELO_SCALE above B
     pop.observed_skill[3:6] = 0.0
     lobby = Lobby(teams=[[0, 1, 2], [3, 4, 5]])
     result = _make_result(lobby, [True, False])  # favorite A wins
     cfg = RatingUpdaterConfig(kind="elo_extract", k_factor=32.0)
     ExtractEloUpdater(cfg).update(result, pop)
-    # expected_a vs b with ELO_DIVISOR diff: 1 / (1 + 10^(-1)) = 10/11
+    # expected_a vs b with ELO_SCALE diff: 1 / (1 + 10^(-1)) = 10/11
     # delta_a = 32 * (1 - 10/11) = 32/11 ≈ 2.909, per player ≈ 0.97
-    gain_per_player_a = 32.0 * (1.0 - 10.0 / 11.0) / 3.0 / ELO_DIVISOR
+    gain_per_player_a = 32.0 * (1.0 - 10.0 / 11.0) / 3.0
     np.testing.assert_allclose(
-        pop.observed_skill[:3] - ELO_DIVISOR, [gain_per_player_a] * 3, atol=1e-4
+        pop.observed_skill[:3] - ELO_SCALE, [gain_per_player_a] * 3, atol=1e-4
     )
-    # b (weaker) lost as expected, small rating loss:
-    # actual=0, expected_b = 1/11, delta_b = 32 * (0 - 1/11) = -32/11
-    loss_per_player_b = -32.0 * (1.0 / 11.0) / 3.0 / ELO_DIVISOR
+    # b (weaker) lost as expected: actual=0, expected_b = 1/11
+    loss_per_player_b = -32.0 * (1.0 / 11.0) / 3.0
     np.testing.assert_allclose(
         pop.observed_skill[3:6], [loss_per_player_b] * 3, atol=1e-4
     )
@@ -106,7 +105,7 @@ def test_four_team_lobby_pairs_summed_over_opponents():
     # For team 0 (extracted): vs team1 draw(0.5), vs team2 win(1), vs team3 win(1)
     # At equal rating, expected=0.5 each. Sum of (actual-expected) = 0 + 0.5 + 0.5 = 1.0
     # total_pair_delta = 32 * 1.0 = 32; /3 opponents = 10.667; /3 players = 3.556
-    per_player_extractor = 32.0 * 1.0 / 3.0 / 3.0 / ELO_DIVISOR
+    per_player_extractor = 32.0 * 1.0 / 3.0 / 3.0
     per_player_dier = -per_player_extractor
     np.testing.assert_allclose(
         pop.observed_skill[:3], [per_player_extractor] * 3, atol=1e-5

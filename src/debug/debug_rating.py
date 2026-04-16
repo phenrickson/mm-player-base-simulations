@@ -55,7 +55,7 @@ def main() -> None:
         baseline_extract_prob=0.4,
         strength_sensitivity=1.0,
     )
-    ru_cfg = RatingUpdaterConfig(kind="elo_extract", k_factor=32.0)
+    ru_cfg = RatingUpdaterConfig(kind="elo_extract", k_factor=0.1)
 
     mm = TwoStageMatchmaker(mm_cfg)
     oc = ExtractionOutcomeGenerator(oc_cfg)
