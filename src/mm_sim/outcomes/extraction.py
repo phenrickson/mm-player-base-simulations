@@ -1,60 +1,75 @@
-"""Extraction outcome generator: each team independently extracts or dies."""
+"""Extraction outcome generator: softmax-over-strength winner sampling."""
 
 from __future__ import annotations
-
-from statistics import NormalDist
 
 import numpy as np
 
 from mm_sim.config import OutcomeConfig
 from mm_sim.matchmaker.base import Lobby
 from mm_sim.outcomes.base import MatchResult
+from mm_sim.outcomes.softmax_winners import (
+    plackett_luce_marginals,
+    sample_extractor_count,
+)
 from mm_sim.population import Population
-
-_STD_NORMAL = NormalDist()
 
 
 class ExtractionOutcomeGenerator:
+    """Each match draws k (number of extractors) from a mixture, then samples
+    k winners without replacement from ``softmax(beta * strengths)``.
+
+    ``expected_extract[i]`` is the Plackett-Luce marginal probability that
+    team i is among the top-k under that same softmax — the quantity the
+    calibration chart compares against the rating-updater's Elo view.
+    """
+
     def __init__(self, cfg: OutcomeConfig) -> None:
         self.cfg = cfg
-        # Noise sigma=1; threshold chosen so a team at match_mean extracts
-        # with probability baseline_extract_prob.
-        self._sigma = 1.0
-        self._threshold = float(_STD_NORMAL.inv_cdf(1.0 - cfg.baseline_extract_prob))
 
     def generate(
         self, lobby: Lobby, pop: Population, rng: np.random.Generator
     ) -> MatchResult:
         n_teams = len(lobby.teams)
         strengths = np.zeros(n_teams, dtype=np.float32)
-        # Per-player skill-based performance (without noise). Used for
-        # within-team contribution shares; per-player noise is added on top.
         player_perfs: list[np.ndarray] = []
         for i, team in enumerate(lobby.teams):
             arr = np.array(team, dtype=np.int32)
             s = pop.true_skill[arr].astype(np.float32)
             if self.cfg.gear_weight > 0:
                 s = s + self.cfg.gear_weight * pop.gear[arr].astype(np.float32)
-            strengths[i] = s.mean()  # noise-free team strength
+            strengths[i] = s.mean()
             perf_noise = rng.normal(
                 0.0, self.cfg.noise_std, size=len(arr)
             ).astype(np.float32)
             player_perfs.append(s + perf_noise)
 
-        match_mean = float(strengths.mean())
-        deltas = strengths - match_mean
-        noise = rng.normal(0.0, self._sigma, size=n_teams).astype(np.float32)
-        rolls = self.cfg.strength_sensitivity * deltas + noise
-        extracted = rolls > self._threshold
-
-        # Expected extract: P(roll > threshold | delta) under N(0, sigma) noise.
-        z = (self._threshold - self.cfg.strength_sensitivity * deltas) / self._sigma
-        expected_extract = np.array(
-            [1.0 - _STD_NORMAL.cdf(float(zi)) for zi in z],
-            dtype=np.float32,
+        k = sample_extractor_count(
+            n_teams=n_teams,
+            mean_extractors=self.cfg.mean_extractors_per_match,
+            p_zero=self.cfg.p_zero_extract,
+            p_all=self.cfg.p_all_extract,
+            rng=rng,
         )
+        beta = self.cfg.strength_sensitivity
+        extracted = np.zeros(n_teams, dtype=bool)
+        if k >= n_teams:
+            extracted[:] = True
+        elif k > 0:
+            shifted = beta * strengths.astype(np.float64)
+            shifted = shifted - shifted.max()
+            w = np.exp(shifted)
+            remaining = np.ones(n_teams, dtype=bool)
+            for _ in range(k):
+                pool = np.flatnonzero(remaining)
+                probs = w[pool] / w[pool].sum()
+                pick = int(rng.choice(pool, p=probs))
+                extracted[pick] = True
+                remaining[pick] = False
 
-        # Attribute kills.
+        expected_extract = plackett_luce_marginals(
+            strengths=strengths, k=k, beta=beta
+        ).astype(np.float32)
+
         kill_credits: list[tuple[int, int]] = []
         extractor_idxs = np.flatnonzero(extracted)
         if extractor_idxs.size > 0:
@@ -69,18 +84,12 @@ class ExtractionOutcomeGenerator:
                     killer = int(max(extractor_idxs, key=lambda i: strengths[i]))
                 kill_credits.append((killer, int(dead)))
 
-        # Per-player contributions, ordered to match result.flat_player_ids().
-        # `player_perf` is each player's effective performance this match;
-        # within a team we normalize to a positive share used by the rating
-        # updater to weight per-player rating deltas.
         flat_perf = np.concatenate(player_perfs).astype(np.float32)
-        # Within-team normalized share (positive, sums to team_size per team).
         shares = np.zeros_like(flat_perf)
         cursor = 0
         for i, team in enumerate(lobby.teams):
             n = len(team)
             team_perf = flat_perf[cursor : cursor + n]
-            # Shift to strictly positive so shares make sense.
             shifted = team_perf - team_perf.min() + 0.1
             shares[cursor : cursor + n] = shifted / shifted.mean()
             cursor += n
@@ -89,7 +98,7 @@ class ExtractionOutcomeGenerator:
             lobby=lobby,
             extracted=extracted,
             kill_credits=kill_credits,
-            expected_extract=expected_extract.astype(np.float32),
+            expected_extract=expected_extract,
             team_strength=strengths,
             winning_team=-1,
             contributions={
