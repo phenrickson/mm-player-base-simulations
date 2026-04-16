@@ -77,8 +77,10 @@ def test_outcome_config_extraction_defaults():
 
     cfg = OutcomeConfig(kind="extraction")
     assert cfg.kind == "extraction"
-    assert cfg.baseline_extract_prob == 0.4
-    assert cfg.strength_sensitivity == 1.0
+    assert cfg.mean_extractors_per_match == 1.8
+    assert cfg.p_zero_extract == 0.01
+    assert cfg.p_all_extract == 0.03
+    assert cfg.strength_sensitivity == 2.0
 
 
 def test_matchmaker_config_two_stage_defaults():

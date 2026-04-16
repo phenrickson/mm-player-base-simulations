@@ -93,8 +93,12 @@ class OutcomeConfig(BaseModel):
     # 0.0 = gear is cosmetic (default, preserves pre-existing scenarios).
     # Nonzero = effective_rating = true_skill + gear_weight * gear + noise.
     gear_weight: float = Field(0.0, ge=0.0)
-    baseline_extract_prob: float = Field(0.4, ge=0.0, le=1.0)
-    strength_sensitivity: float = Field(1.0, gt=0.0)
+    # Softmax-extract parameters (see outcomes.softmax_winners).
+    mean_extractors_per_match: float = Field(1.8, gt=0.0)
+    p_zero_extract: float = Field(0.01, ge=0.0, le=1.0)
+    p_all_extract: float = Field(0.03, ge=0.0, le=1.0)
+    # Softmax temperature beta; higher = stronger team dominates more.
+    strength_sensitivity: float = Field(2.0, gt=0.0)
 
 
 class RatingUpdaterConfig(BaseModel):
