@@ -63,6 +63,7 @@ class Experiment:
     aggregate: pl.DataFrame
     population: pl.DataFrame | None  # None if per-day snapshots weren't saved
     matches: pl.DataFrame | None = None  # Per-match quality log
+    match_teams: pl.DataFrame | None = None  # Per-team-per-match detail (extraction mode)
 
 
 def _git_sha() -> str | None:
@@ -197,6 +198,7 @@ class ExperimentRunner:
             else None
         )
         matches = engine.snapshot_writer.match_dataframe()
+        match_teams = engine.snapshot_writer.match_team_dataframe()
 
         metadata = ExperimentMetadata(
             name=resolved_name,
@@ -209,7 +211,9 @@ class ExperimentRunner:
             season_days=cfg.season_days,
         )
 
-        _write_experiment(version_dir, metadata, cfg, aggregate, population, matches)
+        _write_experiment(
+            version_dir, metadata, cfg, aggregate, population, matches, match_teams
+        )
 
         if population is not None:
             generate_plots(
@@ -225,6 +229,7 @@ class ExperimentRunner:
             aggregate=aggregate,
             population=population,
             matches=matches,
+            match_teams=match_teams,
         )
 
 
@@ -235,6 +240,7 @@ def _write_experiment(
     aggregate: pl.DataFrame,
     population: pl.DataFrame | None,
     matches: pl.DataFrame | None = None,
+    match_teams: pl.DataFrame | None = None,
 ) -> None:
     (exp_dir / "metadata.json").write_text(
         json.dumps(metadata.to_dict(), indent=2)
@@ -243,6 +249,8 @@ def _write_experiment(
     aggregate.write_parquet(exp_dir / "aggregate.parquet")
     if matches is not None:
         matches.write_parquet(exp_dir / "matches.parquet")
+    if match_teams is not None:
+        match_teams.write_parquet(exp_dir / "match_teams.parquet")
     if population is not None:
         population.write_parquet(exp_dir / "population.parquet")
 
@@ -286,12 +294,15 @@ def load_experiment(
     population = pl.read_parquet(pop_path) if pop_path.exists() else None
     match_path = version_dir / "matches.parquet"
     matches = pl.read_parquet(match_path) if match_path.exists() else None
+    mt_path = version_dir / "match_teams.parquet"
+    match_teams = pl.read_parquet(mt_path) if mt_path.exists() else None
     return Experiment(
         metadata=metadata,
         config=cfg,
         aggregate=aggregate,
         population=population,
         matches=matches,
+        match_teams=match_teams,
     )
 
 

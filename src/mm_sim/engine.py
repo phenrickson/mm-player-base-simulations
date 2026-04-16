@@ -166,6 +166,39 @@ class SimulationEngine:
                     self.population,
                     spawn_child(round_rng, f"lobby_{lobby_idx}"),
                 )
+
+                # Capture per-team "before" state for extraction match log.
+                if self.cfg.outcomes.kind == "extraction":
+                    n_kills_per_team = np.zeros(len(lobby.teams), dtype=np.int32)
+                    killed_by = np.full(len(lobby.teams), -1, dtype=np.int32)
+                    for killer, victim in result.kill_credits:
+                        n_kills_per_team[killer] += 1
+                        killed_by[victim] = killer
+                    for team_idx, team in enumerate(lobby.teams):
+                        team_arr = np.array(team, dtype=np.int32)
+                        self.snapshot_writer.record_match_team_detail(
+                            day=day,
+                            match_idx=day_match_idx,
+                            team_idx=team_idx,
+                            player_ids=list(team),
+                            mean_true_skill_before=float(
+                                self.population.true_skill[team_arr].mean()
+                            ),
+                            mean_observed_skill_before=float(
+                                self.population.observed_skill[team_arr].mean()
+                            ),
+                            mean_gear_before=float(
+                                self.population.gear[team_arr].mean()
+                            ),
+                            team_strength=float(result.team_strength[team_idx]),
+                            expected_extract=float(
+                                result.expected_extract[team_idx]
+                            ),
+                            extracted=bool(result.extracted[team_idx]),
+                            kills=int(n_kills_per_team[team_idx]),
+                            killed_by_team=int(killed_by[team_idx]),
+                        )
+
                 self.rating_updater.update(result, self.population)
 
                 if self.cfg.outcomes.kind == "extraction":
@@ -217,6 +250,10 @@ class SimulationEngine:
                         self.population.true_skill[np.array(t, dtype=np.int32)]
                         for t in lobby.teams
                     ]
+                    favorite_idx = int(np.argmax(result.team_strength))
+                    favorite_expected_extract = float(
+                        result.expected_extract[favorite_idx]
+                    )
                     self.snapshot_writer.record_match(
                         day=day,
                         match_idx=day_match_idx,
@@ -224,6 +261,7 @@ class SimulationEngine:
                         team_true_skills=team_trues,
                         is_blowout=False,
                         winning_team=winning_team,
+                        favorite_expected_extract=favorite_expected_extract,
                     )
                     day_match_idx += 1
                 else:
