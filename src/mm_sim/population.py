@@ -131,7 +131,12 @@ def _sample_skill(
             cfg.true_skill_mean - half, cfg.true_skill_mean + half, size=n
         )
     if cfg.true_skill_distribution == "right_skewed":
-        raw = rng.lognormal(mean=0.0, sigma=0.8, size=n)
+        # Gentler lognormal (sigma 0.4 vs 0.8) keeps a right tail without
+        # pushing outliers into the 10+ std range. After z-normalization,
+        # clamp to +/-3 std so the worst outlier sits roughly where the
+        # observed_skill range naturally tops out.
+        raw = rng.lognormal(mean=0.0, sigma=0.4, size=n)
         raw = (raw - raw.mean()) / raw.std()
+        raw = np.clip(raw, -3.0, 3.0)
         return raw * cfg.true_skill_std + cfg.true_skill_mean
     raise ValueError(f"unknown distribution: {cfg.true_skill_distribution}")

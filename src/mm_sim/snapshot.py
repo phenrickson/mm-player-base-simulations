@@ -238,9 +238,12 @@ class DailySnapshotWriter:
         extracted: bool,
         kills: int,
         killed_by_team: int,  # -1 if none
+        observed_skill_before: list[float] | None = None,
+        observed_skill_after: list[float] | None = None,
     ) -> None:
         """One row per team per match. Captures what the team looked like
-        going into the match and what happened."""
+        going into the match and what happened. The before/after observed
+        skill lists align with player_ids for per-player rating delta."""
         self._match_team_rows.append(
             {
                 "day": day,
@@ -255,6 +258,16 @@ class DailySnapshotWriter:
                 "extracted": bool(extracted),
                 "kills": int(kills),
                 "killed_by_team": int(killed_by_team),
+                "observed_skill_before": (
+                    [float(x) for x in observed_skill_before]
+                    if observed_skill_before is not None
+                    else None
+                ),
+                "observed_skill_after": (
+                    [float(x) for x in observed_skill_after]
+                    if observed_skill_after is not None
+                    else None
+                ),
             }
         )
 

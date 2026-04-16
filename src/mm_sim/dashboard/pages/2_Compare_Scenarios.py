@@ -58,12 +58,15 @@ metric_choice = st.sidebar.selectbox(
         "match quality",
         "rating error",
         "blowout share",
+        "MM calibration",
     ],
 )
 
 st.caption("Version policy: the latest version of each scenario is used.")
 
 runs = []
+calib_runs = []  # (label, match_teams) pairs, only for scenarios with match_teams logged
+cohort_runs = []  # (label, population) pairs, only for scenarios with population logged
 meta_rows = []
 for scen in selected:
     versions = loader.cached_list_versions(exp_dir_str, season, scen)
@@ -72,6 +75,10 @@ for scen in selected:
     ver = versions[-1]
     exp = loader.cached_load_run(exp_dir_str, season, scen, ver)
     runs.append((scen, exp.aggregate))
+    if exp.match_teams is not None and exp.match_teams.height > 0:
+        calib_runs.append((scen, exp.match_teams))
+    if exp.population is not None and exp.population.height > 0:
+        cohort_runs.append((scen, exp.population))
     m = exp.metadata
     meta_rows.append(
         {
@@ -87,18 +94,74 @@ if not runs:
     st.warning("Selected scenarios have no versions.")
     st.stop()
 
-metric_fn = {
-    "active population": charts.population_over_time,
-    "retention": charts.retention_over_time,
-    "match quality": charts.match_quality_over_time,
-    "rating error": charts.rating_error_over_time,
-    "blowout share": charts.blowout_share_over_time,
-}[metric_choice]
+tab_overview, tab_cohorts = st.tabs(["Overview", "Cohorts"])
 
-st.plotly_chart(metric_fn(runs), use_container_width=True, key="focus")
+with tab_overview:
+    if metric_choice == "MM calibration":
+        if calib_runs:
+            st.plotly_chart(
+                charts.mm_calibration_over_time(calib_runs),
+                use_container_width=True,
+                key="focus",
+            )
+        else:
+            st.info(
+                "No selected scenarios have match_teams.parquet. "
+                "Re-run scenarios after the per-match-per-team logging commit."
+            )
+    else:
+        metric_fn = {
+            "active population": charts.population_over_time,
+            "retention": charts.retention_over_time,
+            "match quality": charts.match_quality_over_time,
+            "rating error": charts.rating_error_over_time,
+            "blowout share": charts.blowout_share_over_time,
+        }[metric_choice]
+        st.plotly_chart(metric_fn(runs), use_container_width=True, key="focus")
 
-st.subheader("Metric grid")
-st.plotly_chart(charts.small_multiples(runs), use_container_width=True, key="sm_grid")
+    st.subheader("Metric grid")
+    st.plotly_chart(
+        charts.small_multiples(runs), use_container_width=True, key="sm_grid"
+    )
 
-st.subheader("Run metadata")
-st.dataframe(meta_rows)
+    if calib_runs:
+        st.subheader("MM rating calibration")
+        st.plotly_chart(
+            charts.mm_calibration_over_time(calib_runs),
+            use_container_width=True,
+            key="calib_bottom",
+        )
+
+        st.subheader("Teams extracting per match")
+        st.plotly_chart(
+            charts.extracts_per_match_over_time(calib_runs),
+            use_container_width=True,
+            key="extracts_per_match",
+        )
+
+    st.subheader("Run metadata")
+    st.dataframe(meta_rows)
+
+with tab_cohorts:
+    if not cohort_runs:
+        st.info(
+            "No selected scenarios have population.parquet. "
+            "Re-run scenarios with population snapshots to see cohorts."
+        )
+    else:
+        st.subheader("Retention by day-0 skill decile")
+        st.caption(
+            "Deciles are assigned per scenario from that scenario's own "
+            "day-0 true_skill distribution."
+        )
+        st.plotly_chart(
+            charts.retention_by_decile_faceted(cohort_runs),
+            use_container_width=True,
+            key="cohort_facets",
+        )
+        st.subheader("Daily churn rate by experience cohort")
+        st.plotly_chart(
+            charts.churn_rate_by_experience_cohort(cohort_runs),
+            use_container_width=True,
+            key="cohort_churn",
+        )

@@ -16,6 +16,7 @@ def _agg(days: int = 10, start_pop: int = 100) -> pl.DataFrame:
             "blowouts": [5 for _ in range(days)],
             "rating_error_mean": [0.1 * i for i in range(days)],
             "win_prob_dev_mean": [0.2 for _ in range(days)],
+            "favorite_expected_extract_mean": [0.35 for _ in range(days)],
             "true_skill_p10": [0.1 for _ in range(days)],
             "true_skill_p50": [0.5 for _ in range(days)],
             "true_skill_p90": [0.9 for _ in range(days)],
@@ -46,10 +47,10 @@ def test_retention_over_time_normalizes_to_day_zero():
     assert abs(ys[-1] - 0.96) < 1e-9
 
 
-def test_match_quality_over_time_uses_win_prob_dev():
+def test_match_quality_over_time_uses_favorite_expected_extract():
     fig = charts.match_quality_over_time([("r", _agg())])
     assert len(fig.data) == 1
-    assert list(fig.data[0].y) == [0.2] * 10
+    assert list(fig.data[0].y) == [0.35] * 10
 
 
 def test_rating_error_over_time_has_trace():

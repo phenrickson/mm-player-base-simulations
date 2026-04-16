@@ -742,25 +742,54 @@ def _plot_band(
 
 
 def _plot_favorite_win_prob(ax, aggregate: pl.DataFrame) -> None:
-    """Stronger team's expected win probability: 0.5 + |dev|.
+    """Favorite's expected win-or-extract probability.
 
-    0.5 = perfect coin flip; 1.0 = locked stomp. Shaded band between
-    mean-at-p50 and mean-at-p90 to show typical vs worst matches.
+    Extraction mode: strongest team's `expected_extract` (baseline 1/n_teams).
+    2-team mode: 0.5 + |P(team_a wins) - 0.5| (baseline 0.5).
+    Higher = more lopsided match in either case.
     """
-    if "win_prob_dev_mean" not in aggregate.columns:
-        ax.text(0.5, 0.5, "win_prob_dev not recorded", ha="center", va="center")
-        return
     days = aggregate["day"].to_numpy()
-    mean = 0.5 + aggregate["win_prob_dev_mean"].to_numpy()
-    if "win_prob_dev_p50" in aggregate.columns and "win_prob_dev_p90" in aggregate.columns:
-        p50 = 0.5 + aggregate["win_prob_dev_p50"].to_numpy()
-        p90 = 0.5 + aggregate["win_prob_dev_p90"].to_numpy()
-        ax.fill_between(days, p50, p90, alpha=0.2, color=COLOR_STAYED, label="p50–p90")
-    ax.plot(days, mean, linewidth=2, color=COLOR_STAYED, label="mean")
-    ax.axhline(0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6, label="coin flip")
+    use_extract = (
+        "favorite_expected_extract_mean" in aggregate.columns
+        and not aggregate["favorite_expected_extract_mean"].is_null().all()
+    )
+    if use_extract:
+        mean = aggregate["favorite_expected_extract_mean"].to_numpy()
+        p50_col, p90_col = (
+            "favorite_expected_extract_p50",
+            "favorite_expected_extract_p90",
+        )
+        if p50_col in aggregate.columns and p90_col in aggregate.columns:
+            p50 = aggregate[p50_col].to_numpy()
+            p90 = aggregate[p90_col].to_numpy()
+            ax.fill_between(days, p50, p90, alpha=0.2, color=COLOR_STAYED, label="p50–p90")
+        ax.plot(days, mean, linewidth=2, color=COLOR_STAYED, label="mean")
+        ax.axhline(
+            0.25, color="black", linewidth=1.0, linestyle="--", alpha=0.6,
+            label="chance (0.25)",
+        )
+        ax.set_ylabel("favorite's expected extract probability")
+        ax.set_ylim(0.0, 1.0)
+    elif "win_prob_dev_mean" in aggregate.columns:
+        mean = 0.5 + aggregate["win_prob_dev_mean"].to_numpy()
+        if (
+            "win_prob_dev_p50" in aggregate.columns
+            and "win_prob_dev_p90" in aggregate.columns
+        ):
+            p50 = 0.5 + aggregate["win_prob_dev_p50"].to_numpy()
+            p90 = 0.5 + aggregate["win_prob_dev_p90"].to_numpy()
+            ax.fill_between(days, p50, p90, alpha=0.2, color=COLOR_STAYED, label="p50–p90")
+        ax.plot(days, mean, linewidth=2, color=COLOR_STAYED, label="mean")
+        ax.axhline(
+            0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6,
+            label="coin flip",
+        )
+        ax.set_ylabel("favorite's expected win probability")
+        ax.set_ylim(0.4, 1.0)
+    else:
+        ax.text(0.5, 0.5, "match quality not recorded", ha="center", va="center")
+        return
     ax.set_xlabel("day")
-    ax.set_ylabel("favorite's expected win probability")
-    ax.set_ylim(0.4, 1.0)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, loc="upper right")
 

@@ -92,12 +92,25 @@ def retention_over_time(runs: RunList) -> go.Figure:
 
 
 def match_quality_over_time(runs: RunList) -> go.Figure:
-    return _line_chart(
+    """Extraction-mode match quality: mean pre-noise extract probability of
+    the strongest team in each lobby. A value near 1/n_teams means balanced
+    matchmaking; higher means one team is clearly favored.
+    """
+    fig = _line_chart(
         runs,
-        "win_prob_dev_mean",
-        "Match quality (win-prob deviation, lower is better)",
-        "mean |win prob \u2212 0.5|",
+        "favorite_expected_extract_mean",
+        "Match quality (favorite's expected extract, lower is better)",
+        "mean E[extract] of strongest team",
     )
+    # Reference line at 0.25 (chance baseline for 4 teams).
+    fig.add_hline(
+        y=0.25,
+        line_dash="dot",
+        line_color="#888",
+        annotation_text="chance (0.25)",
+        annotation_position="bottom right",
+    )
+    return fig
 
 
 def rating_error_over_time(runs: RunList) -> go.Figure:
@@ -107,6 +120,211 @@ def rating_error_over_time(runs: RunList) -> go.Figure:
         "Rating error over time",
         "mean |observed \u2212 true|",
     )
+
+
+def mm_calibration_daily(match_teams: pl.DataFrame) -> pl.DataFrame:
+    """Per-day mean |MM-view E[extract] - true-skill E[extract]|.
+
+    Returns a polars DataFrame with columns:
+      * ``day``
+      * ``gap``       — |obs-view Elo E[extract] − true E[extract]|
+      * ``floor``     — |true-view Elo E[extract] − true E[extract]|,
+                        i.e. the irreducible gap between the pairwise-Elo
+                        formula and the normal-CDF true expected_extract
+                        even when observed_skill equals true_skill.
+                        Subtracting this from ``gap`` isolates the MM's
+                        actual rating-calibration error.
+
+    MM-view expected extract is computed with the same pairwise Elo
+    formula the rating updater uses (see ``elo_extract.py``):
+
+        view_a = mean over opponents b of
+            1 / (1 + 10^((skill_b - skill_a) / ELO_SCALE))
+
+    with ELO_SCALE = 1.0. For ``gap`` the inputs are observed_skill;
+    for ``floor`` the inputs are true_skill.
+    """
+    if match_teams.height == 0:
+        return pl.DataFrame({"day": [], "gap": [], "floor": []})
+
+    # Rank within match so we can join each team against its opponents.
+    ranked = match_teams.with_columns(
+        pl.int_range(pl.len()).over(["day", "match_idx"]).alias("_slot")
+    )
+
+    # Self-join on (day, match_idx), keep pairs where slots differ.
+    pairs = ranked.join(
+        ranked.select([
+            "day", "match_idx", "_slot",
+            pl.col("mean_observed_skill_before").alias("_opp_obs"),
+            pl.col("mean_true_skill_before").alias("_opp_true"),
+        ]),
+        on=["day", "match_idx"],
+    ).filter(pl.col("_slot") != pl.col("_slot_right"))
+
+    pairs = pairs.with_columns(
+        (
+            1.0
+            / (1.0 + (10.0 ** (pl.col("_opp_obs") - pl.col("mean_observed_skill_before"))))
+        ).alias("_pair_obs"),
+        (
+            1.0
+            / (1.0 + (10.0 ** (pl.col("_opp_true") - pl.col("mean_true_skill_before"))))
+        ).alias("_pair_true"),
+    )
+    per_team = pairs.group_by(["day", "match_idx", "_slot"]).agg(
+        pl.col("_pair_obs").mean().alias("_obs_view_expected"),
+        pl.col("_pair_true").mean().alias("_true_view_expected"),
+        pl.col("expected_extract").first().alias("_true_expected"),
+    )
+    per_team = per_team.with_columns(
+        (pl.col("_obs_view_expected") - pl.col("_true_expected")).abs().alias("_gap"),
+        (pl.col("_true_view_expected") - pl.col("_true_expected")).abs().alias("_floor"),
+    )
+    daily = (
+        per_team.group_by("day")
+        .agg(
+            pl.col("_gap").mean().alias("gap"),
+            pl.col("_floor").mean().alias("floor"),
+        )
+        .sort("day")
+    )
+    return daily
+
+
+def mm_calibration_over_time(
+    runs: list[tuple[str, pl.DataFrame]],
+) -> go.Figure:
+    """Daily mean gap between MM-view and true-skill expected extract.
+
+    ``runs`` is a list of (label, match_teams) pairs. Each run is
+    plotted as a solid line (observed-skill gap) plus a dashed
+    "floor" line showing the irreducible formula-mismatch gap if
+    ratings were perfect. Gap above floor = MM rating error.
+    """
+    fig = go.Figure()
+    colors = _color_map([label for label, _ in runs])
+    for label, mt in runs:
+        daily = mm_calibration_daily(mt)
+        fig.add_trace(
+            go.Scatter(
+                x=daily["day"].to_list(),
+                y=daily["gap"].to_list(),
+                mode="lines",
+                name=label,
+                line=dict(color=colors[label]),
+                hovertemplate=f"{label}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=daily["day"].to_list(),
+                y=daily["floor"].to_list(),
+                mode="lines",
+                name=f"{label} (floor)",
+                line=dict(color=colors[label], dash="dot"),
+                opacity=0.7,
+                hovertemplate=f"{label} floor: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title="MM rating calibration: |MM's E[extract] − actual E[extract]| (lower is better)",
+        xaxis_title="day",
+        yaxis_title="mean gap per team",
+        hovermode="x unified",
+        yaxis=dict(tickformat=".3f", rangemode="tozero"),
+    )
+    return fig
+
+
+def extracts_per_match_over_time(
+    runs: list[tuple[str, pl.DataFrame]],
+) -> go.Figure:
+    """Share of matches with k=0,1,2,... teams extracting, per day.
+
+    ``runs`` is a list of (label, match_teams) pairs. One subplot per
+    scenario, stacked area showing the daily share of matches by extract
+    count. Matches the visual style of other over-time Compare charts.
+    """
+    from plotly.subplots import make_subplots
+
+    labels = [label for label, _ in runs]
+    colors = _color_map(labels)
+
+    # Per-run daily distributions; also collect the global max k so all
+    # subplots share the same stack categories (and legend colors).
+    per_run_daily: list[tuple[str, pl.DataFrame]] = []
+    max_k = 0
+    for label, mt in runs:
+        per_match = (
+            mt.group_by(["day", "match_idx"])
+            .agg(pl.col("extracted").cast(pl.Int32).sum().alias("k"))
+        )
+        daily = (
+            per_match.group_by(["day", "k"])
+            .agg(pl.len().alias("n"))
+            .with_columns(
+                (pl.col("n") / pl.col("n").sum().over("day")).alias("share")
+            )
+            .sort(["day", "k"])
+        )
+        if daily.height:
+            max_k = max(max_k, int(daily["k"].max()))
+        per_run_daily.append((label, daily))
+
+    k_values = list(range(max_k + 1))
+    # Sequential palette for stack layers (k=0 light -> k=max dark).
+    import plotly.express as px
+    stack_colors = px.colors.sample_colorscale(
+        "Viridis",
+        [i / max(1, max_k) for i in k_values],
+    )
+
+    fig = make_subplots(
+        rows=len(runs),
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=labels,
+        vertical_spacing=0.05,
+    )
+    for row_idx, (label, daily) in enumerate(per_run_daily, start=1):
+        days = sorted(daily["day"].unique().to_list())
+        for k, color in zip(k_values, stack_colors):
+            k_rows = daily.filter(pl.col("k") == k)
+            share_lookup = dict(
+                zip(k_rows["day"].to_list(), k_rows["share"].to_list())
+            )
+            ys = [share_lookup.get(d, 0.0) for d in days]
+            fig.add_trace(
+                go.Scatter(
+                    x=days,
+                    y=ys,
+                    mode="lines",
+                    stackgroup=f"r{row_idx}",
+                    line=dict(width=0.5, color=color),
+                    fillcolor=color,
+                    name=f"{k} teams extracted",
+                    legendgroup=f"k{k}",
+                    showlegend=(row_idx == 1),
+                    hovertemplate=(
+                        f"{label}<br>day %{{x}} \u2014 {k} teams: "
+                        f"%{{y:.1%}}<extra></extra>"
+                    ),
+                ),
+                row=row_idx, col=1,
+            )
+        fig.update_yaxes(
+            tickformat=".0%", range=[0, 1], row=row_idx, col=1,
+        )
+
+    fig.update_layout(
+        title="Share of matches by teams extracted (per day)",
+        height=max(260, 180 * len(runs) + 80),
+        hovermode="x unified",
+        margin=dict(l=60, r=30, t=60, b=40),
+    )
+    fig.update_xaxes(title_text="day", row=len(runs), col=1)
+    return fig
 
 
 def blowout_share_over_time(runs: RunList) -> go.Figure:
@@ -127,7 +345,7 @@ def small_multiples(runs: RunList) -> go.Figure:
     panels = [
         ("Active population", "active_count", runs, ",.0f"),
         ("Retention", "retention", _apply_retention(runs), ".1%"),
-        ("Match quality (win-prob dev)", "win_prob_dev_mean", runs, ".3f"),
+        ("Match quality (favorite E[extract])", "favorite_expected_extract_mean", runs, ".3f"),
         ("Rating error", "rating_error_mean", runs, ".3f"),
     ]
     fig = make_subplots(
@@ -321,6 +539,195 @@ def retention_by_skill_decile(population: pl.DataFrame) -> go.Figure:
         xaxis_title="day", yaxis_title="fraction still active",
         yaxis=dict(tickformat=".0%"),
         hovermode="x unified",
+    )
+    return fig
+
+
+def retention_by_decile_faceted(
+    runs: list[tuple[str, pl.DataFrame]],
+) -> go.Figure:
+    """2x5 grid of retention-over-time, one subplot per day-0 skill decile.
+
+    ``runs`` is a list of ``(scenario_label, population)`` pairs. Each
+    subplot shows one line per scenario, colored consistently across
+    panels. Deciles are assigned per-run from that run's day-0 true_skill
+    distribution (so a "decile 0" player in scenario A may have a
+    different absolute skill than in scenario B — each run is qcut
+    against its own population).
+    """
+    colors = _color_map([label for label, _ in runs])
+    n_deciles = 10
+    rows, cols = 2, 5
+    decile_labels = [str(i) for i in range(n_deciles)]
+    # Human-readable band labels: bottom 10%, 10-20%, ..., top 10%.
+    def _band_label(i: int) -> str:
+        if i == 0:
+            return "bottom 10%"
+        if i == n_deciles - 1:
+            return "top 10%"
+        return f"{i * 10}\u2013{(i + 1) * 10}%"
+    band_titles = [_band_label(i) for i in range(n_deciles)]
+    fig = make_subplots(
+        rows=rows,
+        cols=cols,
+        subplot_titles=band_titles,
+        shared_xaxes=True,
+        shared_yaxes=True,
+        horizontal_spacing=0.04,
+        vertical_spacing=0.12,
+    )
+
+    for run_idx, (label, population) in enumerate(runs):
+        day0 = population.filter(pl.col("day") == 0).select(
+            ["player_id", "true_skill"]
+        )
+        deciles = day0.with_columns(
+            pl.col("true_skill")
+            .qcut(n_deciles, labels=decile_labels)
+            .alias("decile")
+        ).select(["player_id", "decile"])
+        merged = population.join(deciles, on="player_id", how="inner")
+        base = (
+            merged.filter(pl.col("day") == 0)
+            .group_by("decile")
+            .agg(pl.col("active").sum().alias("base"))
+        )
+        daily = (
+            merged.group_by(["day", "decile"])
+            .agg(pl.col("active").sum().alias("active"))
+            .join(base, on="decile")
+            .with_columns(
+                (pl.col("active") / pl.col("base")).alias("retention")
+            )
+            .sort(["decile", "day"])
+        )
+        for dec_idx, dec in enumerate(decile_labels):
+            sub = daily.filter(pl.col("decile") == dec)
+            if sub.height == 0:
+                continue
+            r = dec_idx // cols + 1
+            c = dec_idx % cols + 1
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["day"].to_list(),
+                    y=sub["retention"].to_list(),
+                    mode="lines",
+                    name=label,
+                    legendgroup=label,
+                    showlegend=(dec_idx == 0),
+                    line=dict(color=colors[label]),
+                    hovertemplate=(
+                        f"{label} ({band_titles[dec_idx]}): "
+                        "%{y:.1%}<extra></extra>"
+                    ),
+                ),
+                row=r,
+                col=c,
+            )
+    for r in range(1, rows + 1):
+        for c in range(1, cols + 1):
+            fig.update_yaxes(tickformat=".0%", range=[0, 1.05], row=r, col=c)
+        fig.update_xaxes(title_text="day", row=rows, col=c)
+    fig.update_layout(
+        height=600,
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="top", y=-0.08,
+            xanchor="center", x=0.5,
+        ),
+        margin=dict(t=40, r=30, b=70),
+    )
+    return fig
+
+
+def churn_rate_by_experience_cohort(
+    runs: list[tuple[str, pl.DataFrame]],
+) -> go.Figure:
+    """1x3 grid: daily churn rate faceted by matches_played cohort.
+
+    Cohorts:
+      * new (<20 matches)
+      * casual (20-49 matches)
+      * experienced (>=50 matches)
+
+    Each panel shows one line per scenario. Churn rate on day ``d`` is
+    ``quits_on_d / eligible_on_d`` where a player is eligible if they
+    were active on day d-1 and their matches_played on day d falls in
+    the cohort's range.
+    """
+    cohorts = [
+        ("new (<20 matches)", 0, 20),
+        ("casual (20\u201349 matches)", 20, 50),
+        ("experienced (\u226550 matches)", 50, None),
+    ]
+    colors = _color_map([label for label, _ in runs])
+    fig = make_subplots(
+        rows=1,
+        cols=3,
+        subplot_titles=[c[0] for c in cohorts],
+        shared_yaxes=True,
+        horizontal_spacing=0.05,
+    )
+
+    for run_idx, (label, population) in enumerate(runs):
+        df = population.select(
+            ["day", "player_id", "matches_played", "active"]
+        ).sort(["player_id", "day"])
+        df = df.with_columns(
+            pl.col("active").shift(1).over("player_id").alias("prev_active"),
+        )
+        df = df.with_columns(
+            (pl.col("prev_active") & ~pl.col("active"))
+            .fill_null(False)
+            .alias("quit")
+        )
+        for col_idx, (_title, lo, hi) in enumerate(cohorts):
+            in_cohort = pl.col("matches_played") >= lo
+            if hi is not None:
+                in_cohort = in_cohort & (pl.col("matches_played") < hi)
+            grouped = (
+                df.filter(pl.col("prev_active") & in_cohort)
+                .group_by("day")
+                .agg(
+                    pl.col("quit").sum().alias("quits"),
+                    pl.len().alias("cohort"),
+                )
+                .sort("day")
+            )
+            if grouped.height == 0:
+                continue
+            rate = (
+                grouped["quits"].cast(pl.Float64)
+                / grouped["cohort"].cast(pl.Float64)
+            ).to_list()
+            fig.add_trace(
+                go.Scatter(
+                    x=grouped["day"].to_list(),
+                    y=rate,
+                    mode="lines",
+                    name=label,
+                    legendgroup=label,
+                    showlegend=(col_idx == 0),
+                    line=dict(color=colors[label]),
+                    hovertemplate=f"{label}: %{{y:.2%}}<extra></extra>",
+                ),
+                row=1,
+                col=col_idx + 1,
+            )
+    for c in range(1, 4):
+        fig.update_xaxes(title_text="day", row=1, col=c)
+        fig.update_yaxes(tickformat=".1%", rangemode="tozero", row=1, col=c)
+    fig.update_yaxes(title_text="daily churn rate", row=1, col=1)
+    fig.update_layout(
+        height=380,
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="top", y=-0.18,
+            xanchor="center", x=0.5,
+        ),
+        margin=dict(t=30, r=30, b=80),
     )
     return fig
 

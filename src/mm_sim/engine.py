@@ -167,29 +167,57 @@ class SimulationEngine:
                     spawn_child(round_rng, f"lobby_{lobby_idx}"),
                 )
 
-                # Capture per-team "before" state for extraction match log.
+                # Snapshot per-team pre-rating state so we can compute
+                # per-player rating deltas caused by this specific match.
+                pre_state: list[dict] | None = None
                 if self.cfg.outcomes.kind == "extraction":
                     n_kills_per_team = np.zeros(len(lobby.teams), dtype=np.int32)
                     killed_by = np.full(len(lobby.teams), -1, dtype=np.int32)
                     for killer, victim in result.kill_credits:
                         n_kills_per_team[killer] += 1
                         killed_by[victim] = killer
+                    pre_state = []
                     for team_idx, team in enumerate(lobby.teams):
                         team_arr = np.array(team, dtype=np.int32)
+                        pre_state.append({
+                            "team_idx": team_idx,
+                            "team": list(team),
+                            "team_arr": team_arr,
+                            "mean_true": float(
+                                self.population.true_skill[team_arr].mean()
+                            ),
+                            "mean_obs": float(
+                                self.population.observed_skill[team_arr].mean()
+                            ),
+                            "mean_gear": float(
+                                self.population.gear[team_arr].mean()
+                            ),
+                            "obs_before": [
+                                float(self.population.observed_skill[pid])
+                                for pid in team
+                            ],
+                        })
+
+                self.rating_updater.update(result, self.population)
+
+                # Now that ratings are updated, emit per-team records with
+                # before/after observed_skill captured.
+                if self.cfg.outcomes.kind == "extraction" and pre_state is not None:
+                    for entry in pre_state:
+                        team_idx = entry["team_idx"]
+                        team = entry["team"]
+                        obs_after = [
+                            float(self.population.observed_skill[pid])
+                            for pid in team
+                        ]
                         self.snapshot_writer.record_match_team_detail(
                             day=day,
                             match_idx=day_match_idx,
                             team_idx=team_idx,
-                            player_ids=list(team),
-                            mean_true_skill_before=float(
-                                self.population.true_skill[team_arr].mean()
-                            ),
-                            mean_observed_skill_before=float(
-                                self.population.observed_skill[team_arr].mean()
-                            ),
-                            mean_gear_before=float(
-                                self.population.gear[team_arr].mean()
-                            ),
+                            player_ids=team,
+                            mean_true_skill_before=entry["mean_true"],
+                            mean_observed_skill_before=entry["mean_obs"],
+                            mean_gear_before=entry["mean_gear"],
                             team_strength=float(result.team_strength[team_idx]),
                             expected_extract=float(
                                 result.expected_extract[team_idx]
@@ -197,9 +225,9 @@ class SimulationEngine:
                             extracted=bool(result.extracted[team_idx]),
                             kills=int(n_kills_per_team[team_idx]),
                             killed_by_team=int(killed_by[team_idx]),
+                            observed_skill_before=entry["obs_before"],
+                            observed_skill_after=obs_after,
                         )
-
-                self.rating_updater.update(result, self.population)
 
                 if self.cfg.outcomes.kind == "extraction":
                     apply_extraction_gear_update(
