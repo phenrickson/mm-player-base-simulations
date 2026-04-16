@@ -27,12 +27,19 @@ class ExtractionOutcomeGenerator:
     ) -> MatchResult:
         n_teams = len(lobby.teams)
         strengths = np.zeros(n_teams, dtype=np.float32)
+        # Per-player skill-based performance (without noise). Used for
+        # within-team contribution shares; per-player noise is added on top.
+        player_perfs: list[np.ndarray] = []
         for i, team in enumerate(lobby.teams):
             arr = np.array(team, dtype=np.int32)
             s = pop.true_skill[arr].astype(np.float32)
             if self.cfg.gear_weight > 0:
                 s = s + self.cfg.gear_weight * pop.gear[arr].astype(np.float32)
-            strengths[i] = s.mean()
+            strengths[i] = s.mean()  # noise-free team strength
+            perf_noise = rng.normal(
+                0.0, self.cfg.noise_std, size=len(arr)
+            ).astype(np.float32)
+            player_perfs.append(s + perf_noise)
 
         match_mean = float(strengths.mean())
         deltas = strengths - match_mean
@@ -62,6 +69,22 @@ class ExtractionOutcomeGenerator:
                     killer = int(max(extractor_idxs, key=lambda i: strengths[i]))
                 kill_credits.append((killer, int(dead)))
 
+        # Per-player contributions, ordered to match result.flat_player_ids().
+        # `player_perf` is each player's effective performance this match;
+        # within a team we normalize to a positive share used by the rating
+        # updater to weight per-player rating deltas.
+        flat_perf = np.concatenate(player_perfs).astype(np.float32)
+        # Within-team normalized share (positive, sums to team_size per team).
+        shares = np.zeros_like(flat_perf)
+        cursor = 0
+        for i, team in enumerate(lobby.teams):
+            n = len(team)
+            team_perf = flat_perf[cursor : cursor + n]
+            # Shift to strictly positive so shares make sense.
+            shifted = team_perf - team_perf.min() + 0.1
+            shares[cursor : cursor + n] = shifted / shifted.mean()
+            cursor += n
+
         return MatchResult(
             lobby=lobby,
             extracted=extracted,
@@ -69,5 +92,8 @@ class ExtractionOutcomeGenerator:
             expected_extract=expected_extract.astype(np.float32),
             team_strength=strengths,
             winning_team=-1,
-            contributions={},
+            contributions={
+                "player_perf": flat_perf,
+                "share": shares,
+            },
         )
