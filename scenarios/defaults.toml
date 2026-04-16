@@ -38,7 +38,7 @@ strength_sensitivity = 1.0
 
 [config.rating_updater]
 kind = "elo_extract"
-k_factor = 32.0
+k_factor = 200.0
 
 [config.frequency]
 mean_matches_per_day = 5.0
