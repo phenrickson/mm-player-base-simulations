@@ -512,30 +512,58 @@ def _make_band_plot(metric_prefix: str):
 
 
 def _plot_win_prob_dev_comparison(ax, experiments: list, colors) -> None:
+    """Favorite's expected win-or-extract probability.
+
+    In 2-team mode this is 0.5 + |P(team_a wins) - 0.5| from true_skill Elo.
+    In extraction mode it's the strongest team's `expected_extract`.
+    One axis: higher = more lopsided match.
+    """
+    mode = "extract"
+    for exp in experiments:
+        agg = exp.aggregate
+        if (
+            "favorite_expected_extract_mean" in agg.columns
+            and not agg["favorite_expected_extract_mean"].is_null().all()
+        ):
+            continue
+        mode = "win_prob_dev"
+        break
+
     for color, exp in zip(colors, experiments):
         agg = exp.aggregate
-        if "win_prob_dev_mean" not in agg.columns:
-            continue
         days = agg["day"].to_numpy()
-        mean = 0.5 + agg["win_prob_dev_mean"].to_numpy()
-        if (
-            "win_prob_dev_p50" in agg.columns
-            and "win_prob_dev_p90" in agg.columns
-        ):
-            p50 = 0.5 + agg["win_prob_dev_p50"].to_numpy()
-            p90 = 0.5 + agg["win_prob_dev_p90"].to_numpy()
+        if mode == "extract":
+            if "favorite_expected_extract_mean" not in agg.columns:
+                continue
+            mean = agg["favorite_expected_extract_mean"].to_numpy()
+            p50_col, p90_col = (
+                "favorite_expected_extract_p50",
+                "favorite_expected_extract_p90",
+            )
+        else:
+            if "win_prob_dev_mean" not in agg.columns:
+                continue
+            mean = 0.5 + agg["win_prob_dev_mean"].to_numpy()
+            p50_col, p90_col = "win_prob_dev_p50", "win_prob_dev_p90"
+        if p50_col in agg.columns and p90_col in agg.columns:
+            p50 = agg[p50_col].to_numpy()
+            p90 = agg[p90_col].to_numpy()
+            if mode == "win_prob_dev":
+                p50 = 0.5 + p50
+                p90 = 0.5 + p90
             ax.fill_between(days, p50, p90, alpha=0.15, color=color)
-        ax.plot(
-            days,
-            mean,
-            linewidth=2,
-            color=color,
-            label=exp.metadata.name,
+        ax.plot(days, mean, linewidth=2, color=color, label=exp.metadata.name)
+
+    if mode == "extract":
+        ax.set_ylabel("favorite's expected extract probability")
+        ax.set_ylim(0.0, 1.0)
+    else:
+        ax.axhline(
+            0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6, label="coin flip"
         )
-    ax.axhline(0.5, color="black", linewidth=1.0, linestyle="--", alpha=0.6, label="coin flip")
+        ax.set_ylabel("favorite's expected win probability")
+        ax.set_ylim(0.4, 1.0)
     ax.set_xlabel("day")
-    ax.set_ylabel("favorite's expected win probability")
-    ax.set_ylim(0.4, 1.0)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, loc="upper right")
 
