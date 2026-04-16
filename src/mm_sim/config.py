@@ -50,6 +50,10 @@ class StageConfig(BaseModel):
     )
     max_rating_spread: float = 0.3
     max_rating_spread_growth: float = 0.05
+    # Additive Gaussian jitter applied to the rating sort key. 0 =
+    # deterministic (perfect rating sort); nonzero = similar-rated
+    # parties/teams shuffle over time so teammates/opponents rotate.
+    sort_jitter: float = Field(0.0, ge=0.0)
 
     @field_validator("composite_weights")
     @classmethod
