@@ -367,36 +367,17 @@ with tab_player_detail:
                 )
             )
 
-            # Run-wide bounds so axes stay consistent when switching players.
-            active_pop = exp.population.filter(pl.col("active"))
+            # Gear and season_progress are semantically bounded to [0, 1];
+            # other metrics autoscale per-player (None == plotly default).
+            gear_range = (0.0, 1.0)
+            sp_range = (0.0, 1.0)
+            obs_range = None
+            true_range = None
+            mp_range = None
+            nw_range = None
 
-            def _range(col: str, lo_floor: float | None = None,
-                       hi_ceil: float | None = None,
-                       pad: float = 0.05) -> tuple[float, float]:
-                if active_pop.height == 0 or col not in active_pop.columns:
-                    return (lo_floor or 0.0, hi_ceil or 1.0)
-                lo = float(active_pop[col].min())
-                hi = float(active_pop[col].max())
-                if lo == hi:
-                    hi = lo + 1.0
-                span = hi - lo
-                lo -= span * pad
-                hi += span * pad
-                if lo_floor is not None:
-                    lo = max(lo, lo_floor)
-                if hi_ceil is not None:
-                    hi = min(hi, hi_ceil)
-                return (lo, hi)
-
-            obs_range = _range("observed_skill")
-            true_range = _range("true_skill")
-            gear_range = _range("gear", lo_floor=0.0, hi_ceil=1.0)
-            sp_range = _range("season_progress", lo_floor=0.0, hi_ceil=1.0)
-            mp_range = _range("matches_played", lo_floor=0.0)
-
-            max_player_day = int(active_pop.select(
-                (pl.col("day") - pl.col("join_day")).max()
-            ).item() or 0)
+            # Shared x axis across panels, based on this player's span.
+            max_player_day = int(traj["player_day"].max() or 0)
             pd_range = (0, max(max_player_day, 1))
 
             # Net wins derived from match_teams: +1 per extract, -1 per death,
@@ -483,16 +464,10 @@ with tab_player_detail:
             for r in (1, 2, 3):
                 for c in (1, 2):
                     fig.update_xaxes(range=pd_range, row=r, col=c)
-            # Per-metric y ranges (stable across players).
-            fig.update_yaxes(range=obs_range, row=1, col=1)
-            fig.update_yaxes(range=true_range, row=1, col=2)
+            # Only apply explicit y ranges for the semantically-bounded
+            # metrics; the rest autoscale to each player's data.
             fig.update_yaxes(range=gear_range, row=2, col=1)
             fig.update_yaxes(range=sp_range, row=2, col=2)
-            fig.update_yaxes(range=mp_range, row=3, col=2)
-            # Net wins: symmetric around 0 based on matches_played max
-            # (a player could in principle be all-wins or all-losses).
-            nw_max = int(mp_range[1])
-            fig.update_yaxes(range=(-nw_max, nw_max), row=3, col=1)
 
             fig.update_xaxes(title_text="player day", row=3, col=1)
             fig.update_xaxes(title_text="player day", row=3, col=2)
