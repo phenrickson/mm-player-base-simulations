@@ -51,6 +51,7 @@ def _line_chart(
     fmt: str = ".3f",
 ) -> go.Figure:
     fig = go.Figure()
+    colors = _color_map([label for label, _ in runs])
     for label, df in runs:
         fig.add_trace(
             go.Scatter(
@@ -58,6 +59,7 @@ def _line_chart(
                 y=df[y_col].to_list(),
                 mode="lines",
                 name=label,
+                line=dict(color=colors[label]),
                 hovertemplate=f"{label}: %{{y:{fmt}}}<extra></extra>",
             )
         )
@@ -294,7 +296,15 @@ def retention_by_skill_decile(population: pl.DataFrame) -> go.Figure:
         .sort(["decile", "day"])
     )
     fig = go.Figure()
-    for dec in sorted(daily["decile"].unique().to_list(), key=lambda s: int(s)):
+    import plotly.express as px
+    deciles_sorted = sorted(
+        daily["decile"].unique().to_list(), key=lambda s: int(s)
+    )
+    colors = px.colors.sample_colorscale(
+        "Viridis",
+        [i / max(len(deciles_sorted) - 1, 1) for i in range(len(deciles_sorted))],
+    )
+    for dec, color in zip(deciles_sorted, colors):
         sub = daily.filter(pl.col("decile") == dec)
         fig.add_trace(
             go.Scatter(
@@ -302,6 +312,7 @@ def retention_by_skill_decile(population: pl.DataFrame) -> go.Figure:
                 y=sub["retention"].to_list(),
                 mode="lines",
                 name=f"d{dec}",
+                line=dict(color=color),
                 hovertemplate=f"decile {dec}: %{{y:.1%}}<extra></extra>",
             )
         )
@@ -332,7 +343,15 @@ def cohort_metric_by_skill_decile(
         .sort(["decile", "day"])
     )
     fig = go.Figure()
-    for dec in sorted(daily["decile"].unique().to_list(), key=lambda s: int(s)):
+    import plotly.express as px
+    deciles_sorted = sorted(
+        daily["decile"].unique().to_list(), key=lambda s: int(s)
+    )
+    colors = px.colors.sample_colorscale(
+        "Viridis",
+        [i / max(len(deciles_sorted) - 1, 1) for i in range(len(deciles_sorted))],
+    )
+    for dec, color in zip(deciles_sorted, colors):
         sub = daily.filter(pl.col("decile") == dec)
         fig.add_trace(
             go.Scatter(
@@ -340,6 +359,7 @@ def cohort_metric_by_skill_decile(
                 y=sub["v"].to_list(),
                 mode="lines",
                 name=f"d{dec}",
+                line=dict(color=color),
                 hovertemplate=f"decile {dec}: %{{y:.3f}}<extra></extra>",
             )
         )

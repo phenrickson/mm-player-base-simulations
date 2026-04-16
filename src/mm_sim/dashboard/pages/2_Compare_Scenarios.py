@@ -97,7 +97,7 @@ metric_fn = {
 
 st.plotly_chart(metric_fn(runs), use_container_width=True, key="focus")
 
-st.subheader("Small multiples")
+st.subheader("Metric grid")
 st.plotly_chart(charts.small_multiples(runs), use_container_width=True, key="sm_grid")
 
 st.subheader("Run metadata")
