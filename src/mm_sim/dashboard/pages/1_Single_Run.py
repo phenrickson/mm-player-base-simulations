@@ -526,6 +526,14 @@ with tab_player_detail:
             for r in (1, 2, 3):
                 for c in (1, 2):
                     fig.update_xaxes(range=pd_range, row=r, col=c)
+            # Dotted y=0 reference on the skill and net-wins panels.
+            for (rr, cc) in [(1, 1), (1, 2), (3, 1)]:
+                fig.add_hline(
+                    y=0,
+                    line_dash="dot",
+                    line_color="#666",
+                    row=rr, col=cc,
+                )
             # Only apply explicit y ranges for the semantically-bounded
             # metrics; the rest autoscale to each player's data.
             fig.update_yaxes(range=gear_range, row=2, col=1)
@@ -549,7 +557,78 @@ with tab_player_detail:
             if mt_player.height == 0:
                 st.info("No matches recorded for this player.")
             else:
-                display = mt_player.select(
+                # Per-team expected extract under each view: softmax over
+                # team strengths, scaled by the scenario's mean_extractors
+                # per match. This preserves ranking even when the realized
+                # k was 0 or n_teams (where Plackett-Luce marginals collapse
+                # to all-zeros or all-ones and lose the ranking signal).
+                import numpy as _np
+
+                beta = float(exp.config.outcomes.strength_sensitivity)
+                mean_k = float(exp.config.outcomes.mean_extractors_per_match)
+                match_keys = mt_player.select(["day", "match_idx"]).unique()
+                full_matches = mt.join(
+                    match_keys, on=["day", "match_idx"], how="inner"
+                ).sort(["day", "match_idx", "team_idx"])
+
+                def _softmax_scaled(strengths_arr: _np.ndarray) -> _np.ndarray:
+                    shifted = beta * strengths_arr
+                    shifted = shifted - shifted.max()
+                    w = _np.exp(shifted)
+                    return (w / w.sum()) * mean_k
+
+                def _elo_view(strengths_arr: _np.ndarray) -> _np.ndarray:
+                    n = int(strengths_arr.shape[0])
+                    if n < 2:
+                        return _np.full(n, 0.5, dtype=_np.float64)
+                    out = _np.zeros(n, dtype=_np.float64)
+                    for a in range(n):
+                        opp = _np.concatenate(
+                            [strengths_arr[:a], strengths_arr[a + 1 :]]
+                        )
+                        out[a] = (1.0 / (1.0 + 10.0 ** (opp - strengths_arr[a]))).mean()
+                    return out
+
+                exp_rows: list[dict] = []
+                for (day_v, match_v), group in full_matches.group_by(
+                    ["day", "match_idx"], maintain_order=True
+                ):
+                    obs_strengths = _np.array(
+                        group["mean_observed_skill_before"].to_list(),
+                        dtype=_np.float64,
+                    )
+                    true_strengths = _np.array(
+                        group["mean_true_skill_before"].to_list(),
+                        dtype=_np.float64,
+                    )
+                    # MM view uses Elo; truth view uses softmax × mean_k.
+                    obs_vals = _elo_view(obs_strengths)
+                    true_vals = _softmax_scaled(true_strengths)
+                    for team_idx, obs_val, true_val in zip(
+                        group["team_idx"].to_list(), obs_vals, true_vals
+                    ):
+                        exp_rows.append(
+                            {
+                                "day": int(day_v),
+                                "match_idx": int(match_v),
+                                "team_idx": int(team_idx),
+                                "expected_extract_observed": float(obs_val),
+                                "expected_extract_true": float(true_val),
+                            }
+                        )
+                exp_df = pl.DataFrame(exp_rows)
+                mt_player_aug = mt_player.join(
+                    exp_df,
+                    on=["day", "match_idx", "team_idx"],
+                    how="left",
+                )
+
+                display = mt_player_aug.rename(
+                    {
+                        "expected_extract_observed": "elo_E_win_obs",
+                        "expected_extract_true": "extract_share_true",
+                    }
+                ).select(
                     [
                         "day",
                         "match_idx",
@@ -558,7 +637,8 @@ with tab_player_detail:
                         "mean_observed_skill_before",
                         "mean_gear_before",
                         "team_strength",
-                        "expected_extract",
+                        "elo_E_win_obs",
+                        "extract_share_true",
                         "extracted",
                         "kills",
                         "killed_by_team",
@@ -569,11 +649,19 @@ with tab_player_detail:
                 # Summary stats
                 extract_rate = float(mt_player["extracted"].mean())
                 total_kills = int(mt_player["kills"].sum())
-                mean_expected = float(mt_player["expected_extract"].mean())
+                mean_elo_obs = float(
+                    mt_player_aug["expected_extract_observed"].mean()
+                )
+                mean_share_true = float(
+                    mt_player_aug["expected_extract_true"].mean()
+                )
                 st.caption(
                     f"extract rate: {extract_rate:.1%} \u2022 "
-                    f"mean expected_extract: {mean_expected:.2f} \u2022 "
-                    f"total kills: {total_kills}"
+                    f"mean Elo E[win] (obs): {mean_elo_obs:.2f} \u2022 "
+                    f"mean extract share (true): {mean_share_true:.2f} \u2022 "
+                    f"total kills: {total_kills}   "
+                    f"(obs col = pairwise Elo the rating updater sees; "
+                    f"true col = softmax \u00d7 mean_k = {mean_k:.2f})"
                 )
 
 # --- Match detail ----------------------------------------------------
@@ -696,13 +784,26 @@ with tab_match_detail:
                 obs_strengths = [
                     float(r["mean_observed_skill_before"]) for r in rows_list
                 ]
-                true_expecteds = [float(r["expected_extract"]) for r in rows_list]
-                # MM-view expected extract: what the rating updater would
-                # have scored this team against, given observed_skill only.
-                # Matches elo_extract.py's pairwise formula; ELO_SCALE = 1.0.
-                # For each team a, expected = mean over opponents b of
-                # 1 / (1 + 10^((obs_b - obs_a) / ELO_SCALE)).
-                def _mm_view_expected(skills: list[float]) -> list[float]:
+                # Expected extract uses a different formula per view, so that
+                # each side shows what its own system actually computes:
+                #   - true_skill (outcome)  : softmax(beta * strength) * mean_k
+                #                             — the outcome model's winner-draw.
+                #   - observed_skill (MM)   : pairwise Elo averaged over lobby
+                #                             — the rating updater's view.
+                import numpy as _np_md
+                _beta_md = float(exp.config.outcomes.strength_sensitivity)
+                _mean_k_md = float(
+                    exp.config.outcomes.mean_extractors_per_match
+                )
+
+                def _expected_via_softmax(skills: list[float]) -> list[float]:
+                    arr = _np_md.array(skills, dtype=_np_md.float64)
+                    shifted = _beta_md * arr
+                    shifted = shifted - shifted.max()
+                    w = _np_md.exp(shifted)
+                    return ((w / w.sum()) * _mean_k_md).tolist()
+
+                def _expected_via_elo(skills: list[float]) -> list[float]:
                     n = len(skills)
                     if n < 2:
                         return [0.5] * n
@@ -714,7 +815,9 @@ with tab_match_detail:
                         ]
                         out.append(sum(pairs) / len(pairs))
                     return out
-                obs_expecteds = _mm_view_expected(obs_strengths)
+
+                true_expecteds = _expected_via_softmax(true_strengths)
+                obs_expecteds = _expected_via_elo(obs_strengths)
                 extracted_flags = [bool(r["extracted"]) for r in rows_list]
                 actuals = [1.0 if e else 0.0 for e in extracted_flags]
                 kills_per_team = [int(r["kills"]) for r in rows_list]
@@ -729,7 +832,7 @@ with tab_match_detail:
                 c2.metric("extracted", f"{n_extract}/{n_teams}")
                 c3.metric("strongest team", f"#{team_idxs[strongest_pos]}")
                 c4.metric(
-                    "strongest E[extract]",
+                    "strongest share",
                     f"{true_expecteds[strongest_pos]:.2f}",
                 )
 
@@ -827,10 +930,22 @@ with tab_match_detail:
                     ),
                     row=1, col=2,
                 )
+                # Reference line: for the softmax (truth) view, the uniform-
+                # strength baseline share is mean_k / n_teams. For the Elo
+                # (MM) view, every team's pairwise E[win] equals 0.5 when
+                # ratings are identical.
+                _ref_x = (
+                    _mean_k_md / n_teams if not use_observed else 0.5
+                )
+                _ref_label = (
+                    f"uniform {_ref_x:.2f}" if not use_observed else "0.5"
+                )
                 combined.add_vline(
-                    x=0.5,
+                    x=_ref_x,
                     line_dash="dot",
                     line_color="#666",
+                    annotation_text=_ref_label,
+                    annotation_position="top",
                     row=1, col=2,
                 )
                 # Pad the left x-axis so outside-left/right labels don't
@@ -843,9 +958,17 @@ with tab_match_detail:
                     range=[strength_min - strength_pad, strength_max + strength_pad],
                     row=1, col=1,
                 )
+                if use_observed:
+                    _right_title = "Elo E[win vs lobby] (MM view)"
+                    _right_range = [0, 1.05]
+                else:
+                    _right_title = (
+                        f"extract share (softmax \u00d7 mean_k = {_mean_k_md:.2f})"
+                    )
+                    _right_range = [0, max(1.25, _mean_k_md + 0.25)]
                 combined.update_xaxes(
-                    title_text="expected extract probability",
-                    range=[0, 1.25],
+                    title_text=_right_title,
+                    range=_right_range,
                     row=1, col=2,
                 )
                 combined.update_layout(
@@ -971,123 +1094,149 @@ with tab_match_detail:
                         "Re-run the scenario to populate rating changes."
                     )
                 else:
-                    # Dumbbell plot: before -> after observed_skill per player.
-                    # Collect all rows so we can sort players top-to-bottom by team.
-                    delta_rows: list[dict] = []
+                    # Faceted dumbbell: one row per team (single column), so
+                    # each team's before/after pattern reads clearly. The
+                    # per-team delta goes in the subplot title; per-player
+                    # deltas are hidden (they're equal within a team).
+                    from plotly.subplots import make_subplots as _mks_d
+
+                    teams_in_order = sorted(
+                        {int(r["team_idx"]) for r in rows_list}
+                    )
+                    # Build per-team player rows keyed by team_idx.
+                    per_team: dict[int, list[dict]] = {
+                        t: [] for t in teams_in_order
+                    }
                     for r in rows_list:
                         t_idx = int(r["team_idx"])
                         pids = list(r["player_ids"])
                         before = list(r["observed_skill_before"])
                         after = list(r["observed_skill_after"])
                         for p, b, a in zip(pids, before, after):
-                            delta_rows.append(
+                            per_team[t_idx].append(
                                 {
-                                    "team_idx": t_idx,
                                     "pid": int(p),
                                     "before": float(b),
                                     "after": float(a),
                                     "delta": float(a) - float(b),
                                 }
                             )
-                    # Order y-axis: Team 0 on top (consistent with the players panel).
-                    delta_rows.sort(key=lambda d: (d["team_idx"], d["pid"]))
-                    y_labels = [f"pid {d['pid']}" for d in delta_rows]
-                    # Plotly draws category arrays bottom-to-top, so reverse.
-                    y_order = list(reversed(y_labels))
 
-                    delta_fig = _go.Figure()
-                    # One connecting line per player (drawn first so markers sit on top).
-                    seen_teams: set[int] = set()
-                    for d in delta_rows:
-                        color = team_colors[d["team_idx"]]
-                        label = f"pid {d['pid']}"
-                        delta_fig.add_trace(
-                            _go.Scatter(
-                                x=[d["before"], d["after"]],
-                                y=[label, label],
-                                mode="lines",
-                                line=dict(color=color, width=2),
-                                hoverinfo="skip",
-                                showlegend=False,
-                            )
+                    # Team-level delta = mean of player deltas (they're equal
+                    # under the current updater, but take the mean so the
+                    # header stays truthful if that ever changes).
+                    team_deltas = {
+                        t: (
+                            sum(d["delta"] for d in per_team[t])
+                            / max(1, len(per_team[t]))
                         )
-                    # Before markers (open circle) and after markers (filled circle).
-                    for d in delta_rows:
-                        color = team_colors[d["team_idx"]]
-                        label = f"pid {d['pid']}"
-                        show_legend = d["team_idx"] not in seen_teams
-                        seen_teams.add(d["team_idx"])
-                        delta_fig.add_trace(
-                            _go.Scatter(
-                                x=[d["before"]],
-                                y=[label],
-                                mode="markers",
-                                marker=dict(
-                                    size=11,
-                                    color="rgba(0,0,0,0)",
-                                    line=dict(color=color, width=2),
-                                    symbol="circle",
-                                ),
-                                name=f"Team {d['team_idx']} (before)",
-                                hovertemplate=(
-                                    f"pid {d['pid']} \u2022 before="
-                                    f"{d['before']:.4f}<extra></extra>"
-                                ),
-                                showlegend=False,
-                            )
-                        )
-                        delta_fig.add_trace(
-                            _go.Scatter(
-                                x=[d["after"]],
-                                y=[label],
-                                mode="markers",
-                                marker=dict(
-                                    size=11,
-                                    color=color,
-                                    line=dict(color="#222", width=1),
-                                    symbol="circle",
-                                ),
-                                name=f"Team {d['team_idx']}",
-                                legendgroup=f"team{d['team_idx']}",
-                                showlegend=show_legend,
-                                hovertemplate=(
-                                    f"pid {d['pid']} \u2022 after="
-                                    f"{d['after']:.4f}<extra></extra>"
-                                ),
-                            )
-                        )
-                    # Delta annotation past the rightmost point for each player.
-                    all_xs = [d["before"] for d in delta_rows] + [
-                        d["after"] for d in delta_rows
+                        for t in teams_in_order
+                    }
+
+                    extracted_by_team = {
+                        int(r["team_idx"]): bool(r["extracted"])
+                        for r in rows_list
+                    }
+                    subplot_titles = [
+                        f"Team {t} \u2022 {'extracted' if extracted_by_team[t] else 'died'} \u2022 \u0394 {team_deltas[t]:+.4f}"
+                        for t in teams_in_order
+                    ]
+
+                    # Shared x range so teams are visually comparable.
+                    all_xs = [
+                        v
+                        for t in teams_in_order
+                        for d in per_team[t]
+                        for v in (d["before"], d["after"])
                     ]
                     x_min = min(all_xs)
                     x_max = max(all_xs)
-                    label_offset = max(0.01, 0.02 * (x_max - x_min))
-                    delta_fig.add_trace(
-                        _go.Scatter(
-                            x=[max(d["before"], d["after"]) + label_offset
-                               for d in delta_rows],
-                            y=[f"pid {d['pid']}" for d in delta_rows],
-                            mode="text",
-                            text=[f"{d['delta']:+.4f}" for d in delta_rows],
-                            textposition="middle right",
-                            textfont=dict(size=11, color="#ddd"),
-                            hoverinfo="skip",
-                            showlegend=False,
-                        )
+                    x_pad = max(0.05, 0.15 * (x_max - x_min))
+                    # Midpoint reference: the match's before-rating center
+                    # line, drawn across every facet. Players whose after
+                    # marker sits on the same vertical as before = no change.
+                    x_mid = 0.5 * (x_min + x_max)
+
+                    delta_fig = _mks_d(
+                        rows=len(teams_in_order),
+                        cols=1,
+                        shared_xaxes=True,
+                        subplot_titles=subplot_titles,
+                        vertical_spacing=0.12,
                     )
-                    x_pad_right = max(0.08, 0.18 * (x_max - x_min))
-                    x_pad_left = max(0.02, 0.04 * (x_max - x_min))
-                    delta_fig.update_layout(
-                        xaxis_title="observed_skill (open = before, filled = after)",
-                        xaxis=dict(range=[x_min - x_pad_left, x_max + x_pad_right]),
-                        yaxis=dict(
+                    for row_i, t in enumerate(teams_in_order, start=1):
+                        color = team_colors[t]
+                        # Stable y order within the facet: by pid asc,
+                        # reversed so the lowest pid renders on top.
+                        team_rows = sorted(per_team[t], key=lambda d: d["pid"])
+                        y_labels = [f"pid {d['pid']}" for d in team_rows]
+                        y_order_local = list(reversed(y_labels))
+
+                        for d in team_rows:
+                            label = f"pid {d['pid']}"
+                            delta_fig.add_trace(
+                                _go.Scatter(
+                                    x=[d["before"], d["after"]],
+                                    y=[label, label],
+                                    mode="lines",
+                                    line=dict(color=color, width=2),
+                                    hoverinfo="skip",
+                                    showlegend=False,
+                                ),
+                                row=row_i, col=1,
+                            )
+                            delta_fig.add_trace(
+                                _go.Scatter(
+                                    x=[d["before"]],
+                                    y=[label],
+                                    mode="markers",
+                                    marker=dict(
+                                        size=11,
+                                        color="rgba(0,0,0,0)",
+                                        line=dict(color=color, width=2),
+                                        symbol="circle",
+                                    ),
+                                    hovertemplate=(
+                                        f"pid {d['pid']} \u2022 before="
+                                        f"{d['before']:.4f}<extra></extra>"
+                                    ),
+                                    showlegend=False,
+                                ),
+                                row=row_i, col=1,
+                            )
+                            delta_fig.add_trace(
+                                _go.Scatter(
+                                    x=[d["after"]],
+                                    y=[label],
+                                    mode="markers",
+                                    marker=dict(
+                                        size=11,
+                                        color=color,
+                                        line=dict(color="#222", width=1),
+                                        symbol="circle",
+                                    ),
+                                    hovertemplate=(
+                                        f"pid {d['pid']} \u2022 after="
+                                        f"{d['after']:.4f}<extra></extra>"
+                                    ),
+                                    showlegend=False,
+                                ),
+                                row=row_i, col=1,
+                            )
+                        delta_fig.update_yaxes(
                             categoryorder="array",
-                            categoryarray=y_order,
-                        ),
-                        height=max(260, 32 * len(delta_rows) + 80),
-                        margin=dict(l=80, r=40, t=30, b=50),
-                        legend=dict(orientation="h", y=1.12),
+                            categoryarray=y_order_local,
+                            row=row_i, col=1,
+                        )
+
+                    delta_fig.update_xaxes(
+                        range=[x_min - x_pad, x_max + x_pad],
+                        title_text="observed_skill (open = before, filled = after)",
+                        row=len(teams_in_order), col=1,
+                    )
+                    delta_fig.update_layout(
+                        height=max(220, 130 * len(teams_in_order) + 60),
+                        margin=dict(l=80, r=40, t=40, b=50),
                     )
                     st.plotly_chart(
                         delta_fig, use_container_width=True, key="md_deltas"

@@ -950,6 +950,99 @@ def matches_metric_over_time(matches: pl.DataFrame, column: str) -> go.Figure:
     return fig
 
 
+def player_trajectory_by_scenario(
+    cohort_runs: list[tuple[str, pl.DataFrame]],
+    n_players: int = 500,
+    seed: int = 1999,
+) -> go.Figure:
+    """Compare per-player true_skill trajectories across scenarios.
+
+    For each selected scenario ``cohort_runs`` has its population
+    DataFrame. A shared random sample of player_ids (present at day 0
+    in every scenario) is drawn, and each player's `(matches_played,
+    true_skill)` trajectory is plotted. One line per (player, scenario),
+    colored by scenario, so the same player's three trajectories can be
+    visually compared as they diverge from the shared day-0 starting
+    point.
+    """
+    import random as _rnd
+
+    colors = _color_map([label for label, _ in cohort_runs])
+    fig = go.Figure()
+
+    if not cohort_runs:
+        return fig
+
+    # Intersection of day-0 player IDs across every scenario.
+    day0_sets: list[set[int]] = []
+    for _label, pop in cohort_runs:
+        ids = (
+            pop.filter(pl.col("day") == 0)["player_id"].unique().to_list()
+        )
+        day0_sets.append(set(int(x) for x in ids))
+    common = set.intersection(*day0_sets) if day0_sets else set()
+    if not common:
+        return fig
+
+    rng = _rnd.Random(seed)
+    sampled = rng.sample(
+        sorted(common), k=min(n_players, len(common))
+    )
+    sample_list = sorted(sampled)
+
+    # Legend proxies: one solid, invisible-x trace per scenario so the
+    # legend swatch shows the true color (not the 0.15-opacity player
+    # lines).
+    for label, _pop in cohort_runs:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                line=dict(color=colors[label], width=3),
+                name=label,
+                legendgroup=label,
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
+    for label, pop in cohort_runs:
+        sub = (
+            pop.filter(pl.col("player_id").is_in(sample_list))
+            .filter(pl.col("active"))
+            .select(["player_id", "matches_played", "true_skill"])
+            .sort(["player_id", "matches_played"])
+        )
+        color = colors[label]
+        for pid, group in sub.group_by("player_id", maintain_order=True):
+            xs = group["matches_played"].to_list()
+            ys = group["true_skill"].to_list()
+            if not xs:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    mode="lines",
+                    line=dict(color=color, width=1),
+                    opacity=0.4,
+                    legendgroup=label,
+                    showlegend=False,
+                    hoverinfo="skip",
+                )
+            )
+
+    fig.update_layout(
+        title=f"Per-player true_skill trajectories ({len(sample_list)} players)",
+        xaxis_title="matches_played",
+        yaxis_title="true_skill",
+        hovermode=False,
+        legend=dict(orientation="h", y=1.08),
+        height=520,
+    )
+    return fig
+
+
 def _color_map(labels: list[str]) -> dict[str, str]:
     """Stable color per label using Plotly's default qualitative palette."""
     import plotly.express as px

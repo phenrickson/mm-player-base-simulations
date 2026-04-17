@@ -165,3 +165,26 @@ with tab_cohorts:
             use_container_width=True,
             key="cohort_churn",
         )
+
+        st.subheader("Per-player trajectories across scenarios")
+        st.caption(
+            "Same random sample of players in every scenario. Each player "
+            "starts from the same day-0 true_skill; one line per "
+            "(player, scenario) shows how each matchmaking system shaped "
+            "their season."
+        )
+        n_players = st.slider(
+            "sample size",
+            min_value=50,
+            max_value=1000,
+            value=500,
+            step=50,
+            key="cohort_traj_sample",
+        )
+        st.plotly_chart(
+            charts.player_trajectory_by_scenario(
+                cohort_runs, n_players=n_players
+            ),
+            use_container_width=True,
+            key="cohort_traj",
+        )
