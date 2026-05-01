@@ -393,6 +393,20 @@ with tab_player_detail:
         else:
             d0 = day0_row.row(0, named=True)
             df = final_row.row(0, named=True)
+
+            # Pre-compute extraction stats for this player so they can be
+            # surfaced in the top-level metric block.
+            mt_player_top = mt.filter(
+                pl.col("player_ids").list.contains(pid)
+            )
+            n_matches_mt = int(mt_player_top.height)
+            n_extracts = (
+                int(mt_player_top["extracted"].sum()) if n_matches_mt > 0 else 0
+            )
+            extract_rate_top = (
+                (n_extracts / n_matches_mt) if n_matches_mt > 0 else float("nan")
+            )
+
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("true_skill", f"{d0.get('true_skill', 0):.3f}")
             c2.metric(
@@ -411,10 +425,10 @@ with tab_player_detail:
                 "matches_played (final)",
                 f"{int(df.get('matches_played', 0))}",
             )
-            c7.metric("active at end", "yes" if df.get("active", False) else "no")
+            c7.metric("extractions", f"{n_extracts}")
             c8.metric(
-                "talent_ceiling",
-                f"{d0.get('talent_ceiling', float('nan')):.3f}",
+                "extract rate",
+                f"{extract_rate_top:.1%}" if n_matches_mt > 0 else "n/a",
             )
 
             # Multi-panel trajectories on player-day axis. Only show days
