@@ -47,6 +47,78 @@ defaults now use the extraction model.
 
 Everything is seeded, so runs are reproducible.
 
+## Core assumptions
+
+The goal is to mic the **core systems** of an
+extraction shooter: matchmaking, match outcomes, skill and gear
+progression, and player retention at the population/season level. We can't
+simulate an entire game, so the model focuses on the systems that
+shape who is in the player base and what they experience over time.
+These are the simplifying assumptions the rest of the code is built
+on — useful to skim before reading scenario results.
+
+### Players
+
+- A player is a vector, not an agent. State is just numbers:
+  `true_skill`, `talent_ceiling`, `observed_skill`, `experience`, `gear`,
+  `season_progress`, `active`, party id, and a few rolling counters.
+- **Skill is bounded and growable.** `true_skill` starts below
+  `talent_ceiling` and drifts toward it on each match played, like a
+  decaying gap. Nobody gets infinitely good; talent is the asymptote.
+- **Skill ≠ rating.** `true_skill` is hidden ground truth; the
+  matchmaker only sees `observed_skill`, which moves via Elo on
+  extract/wipe outcomes. The gap between the two drives most
+  interesting dynamics.
+- **Gear is a separate axis from skill.** It grows on extraction and
+  transfers from dead teams to their killers (punching up earns more,
+  punching down earns near-nothing). It can substitute for skill in
+  match outcomes if the outcome model weights it.
+- **Churn is experience-driven, not skill-driven.** Skill is never a
+  direct input to quit probability. Players quit because of recent
+  losses, blowouts, season-pass pressure, or boredom — not because
+  they are "bad."
+- **New players are fragile.** Until they cross a matches-played
+  threshold, the loss/blowout terms in their churn probability are
+  multiplied up, so the same bad week hits them harder than it hits
+  veterans.
+
+### Matches
+
+- **Time is daily ticks.** Within a tick everyone who plays plays
+  simultaneously; there is no intra-day ordering, no time-of-day,
+  and no queue times.
+- **Match frequency is a feedback loop in itself.** Matches-per-day is
+  Poisson with a mean that scales up with recent wins and down with
+  recent blowout losses. Winners play more, losers play less, before
+  any churn check runs.
+- **Lobbies are 12 players = 4 teams of 3.** Built in two stages with
+  independent composite-rating weights: solos/duos are first combined
+  into trios, then trios are sorted by rating and chunked into
+  4-team lobbies. No backfill, no role queue, no map.
+- **The matchmaker rates players on a composite, not pure skill.**
+  Each stage blends `observed_skill`, `experience`, and `gear` with
+  configurable weights — that blend is the central design lever the
+  whole project exists to study.
+- **Outcomes are team-level, not player-level.** A team's "strength"
+  is the mean of its players' `true_skill` (plus an optional gear
+  bonus and per-player Gaussian noise). A softmax over team strengths
+  samples which `k` teams extract, where `k` itself is drawn from a
+  mixture (some matches everyone wipes, some everyone extracts).
+- **Kills are bookkeeping.** Dead teams are credited to "the weakest
+  extracting team that still outranks them" purely so gear transfer
+  has a directed edge. There is no per-player K/D simulation.
+- **Rating updates are pairwise Elo over extract-vs-wipe.** A team
+  that extracted while another wiped scores a 1; both extracting or
+  both wiping is a 0.5. Player rating change = team delta / team size.
+
+### What is deliberately not modeled
+
+Maps, weapons, roles, latency, cheating, smurfs, region/queue
+splits, time-of-day effects, social graph evolution, monetization,
+content patches, and anything resembling a real input device. If a
+scenario result depends on one of those, this model can't tell you
+about it.
+
 ## What's in the repo
 
 ```text
