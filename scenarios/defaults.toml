@@ -9,12 +9,12 @@ season_suffix = "multi-team-extraction"
 
 [config]
 seed = 1999
-season_days = 90
+season_days = 180
 
 [config.population]
-initial_size = 15000
+initial_size = 45000
 true_skill_distribution = "right_skewed"
-daily_new_player_fraction = 0.0067
+daily_new_player_fraction = 0.0087
 
 [config.parties]
 size_distribution = {1 = 0.5, 2 = 0.2, 3 = 0.3}
