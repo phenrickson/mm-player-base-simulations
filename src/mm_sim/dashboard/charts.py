@@ -26,6 +26,32 @@ def _apply_retention(runs: RunList) -> RunList:
     return out
 
 
+def _apply_quits(runs: RunList, inflow_per_run: dict[str, float]) -> RunList:
+    """Derive `quit_count` and `quit_rate` columns from `active_count`.
+
+    quit_count[d] = inflow + active[d-1] - active[d]
+    quit_rate[d]  = quit_count[d] / active[d-1]
+
+    Inflow is per-run because each scenario can have a different
+    daily_new_player_fraction × initial_size. Day 0 gets nulls.
+    """
+    out: RunList = []
+    for label, df in runs:
+        inflow = float(inflow_per_run.get(label, 0.0))
+        prev_active = pl.col("active_count").shift(1)
+        df2 = df.with_columns(
+            (inflow + prev_active - pl.col("active_count")).alias("quit_count"),
+        )
+        df2 = df2.with_columns(
+            pl.when(prev_active > 0)
+            .then(pl.col("quit_count") / prev_active)
+            .otherwise(None)
+            .alias("quit_rate"),
+        )
+        out.append((label, df2))
+    return out
+
+
 def _apply_blowout_share(runs: RunList) -> RunList:
     out: RunList = []
     for label, df in runs:
@@ -335,6 +361,40 @@ def blowout_share_over_time(runs: RunList) -> go.Figure:
         "Blowout share over time",
         "blowouts / matches",
     )
+
+
+def quit_count_over_time(
+    runs: RunList, inflow_per_run: dict[str, float]
+) -> go.Figure:
+    """Daily player quits per scenario.
+
+    Quits are inferred from active_count drift and known daily inflow:
+    quits[d] = inflow + active[d-1] - active[d].
+    """
+    fig = _line_chart(
+        _apply_quits(runs, inflow_per_run),
+        "quit_count",
+        "Daily quits over time",
+        "players quit per day",
+        fmt=",.0f",
+    )
+    fig.update_yaxes(rangemode="tozero")
+    return fig
+
+
+def quit_rate_over_time(
+    runs: RunList, inflow_per_run: dict[str, float]
+) -> go.Figure:
+    """Daily quit rate (quits / prior-day active) per scenario."""
+    fig = _line_chart(
+        _apply_quits(runs, inflow_per_run),
+        "quit_rate",
+        "Daily quit rate over time",
+        "quits / prior-day active",
+        fmt=".2%",
+    )
+    fig.update_yaxes(rangemode="tozero")
+    return fig
 
 
 def small_multiples(runs: RunList) -> go.Figure:

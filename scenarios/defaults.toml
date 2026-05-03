@@ -5,14 +5,14 @@
 # Season name is computed as
 #   {season_days}d-{initial_size}p-{true_skill_distribution}-{season_suffix}
 # so it auto-updates when you change the underlying config.
-season_suffix = "multi-team-extraction"
+season_suffix = "adjust-win-loss-sensitivity"
 
 [config]
 seed = 1999
 season_days = 180
 
 [config.population]
-initial_size = 45000
+initial_size = 15000
 true_skill_distribution = "right_skewed"
 daily_new_player_fraction = 0.0087
 
@@ -46,10 +46,10 @@ k_factor = 0.1
 mean_matches_per_day = 5.0
 
 [config.churn]
-baseline_daily_quit_prob = 0.005
-loss_weight = 0.04
-blowout_loss_weight = 0.14
-win_streak_weight = -0.02
+baseline_daily_quit_prob = 0.0025
+loss_weight = 0.02
+blowout_loss_weight = 0.07
+win_streak_weight = -0.04
 new_player_bonus = 0.75
 new_player_threshold = 15
 loss_streak_exp = 0.3

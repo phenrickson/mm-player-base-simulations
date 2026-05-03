@@ -50,23 +50,12 @@ if not selected:
     st.info("Pick at least one scenario.")
     st.stop()
 
-metric_choice = st.sidebar.selectbox(
-    "focus metric",
-    [
-        "active population",
-        "retention",
-        "match quality",
-        "rating error",
-        "blowout share",
-        "MM calibration",
-    ],
-)
-
 st.caption("Version policy: the latest version of each scenario is used.")
 
 runs = []
 calib_runs = []  # (label, match_teams) pairs, only for scenarios with match_teams logged
 cohort_runs = []  # (label, population) pairs, only for scenarios with population logged
+inflow_per_run: dict[str, float] = {}
 meta_rows = []
 for scen in selected:
     versions = loader.cached_list_versions(exp_dir_str, season, scen)
@@ -75,6 +64,10 @@ for scen in selected:
     ver = versions[-1]
     exp = loader.cached_load_run(exp_dir_str, season, scen, ver)
     runs.append((scen, exp.aggregate))
+    inflow_per_run[scen] = (
+        exp.config.population.daily_new_player_fraction
+        * exp.config.population.initial_size
+    )
     if exp.match_teams is not None and exp.match_teams.height > 0:
         calib_runs.append((scen, exp.match_teams))
     if exp.population is not None and exp.population.height > 0:
@@ -97,6 +90,19 @@ if not runs:
 tab_overview, tab_cohorts = st.tabs(["Overview", "Cohorts"])
 
 with tab_overview:
+    metric_choice = st.selectbox(
+        "focus metric",
+        [
+            "active population",
+            "retention",
+            "daily quits",
+            "daily quit rate",
+            "match quality",
+            "rating error",
+            "blowout share",
+            "MM calibration",
+        ],
+    )
     if metric_choice == "MM calibration":
         if calib_runs:
             st.plotly_chart(
@@ -109,6 +115,18 @@ with tab_overview:
                 "No selected scenarios have match_teams.parquet. "
                 "Re-run scenarios after the per-match-per-team logging commit."
             )
+    elif metric_choice == "daily quits":
+        st.plotly_chart(
+            charts.quit_count_over_time(runs, inflow_per_run),
+            use_container_width=True,
+            key="focus",
+        )
+    elif metric_choice == "daily quit rate":
+        st.plotly_chart(
+            charts.quit_rate_over_time(runs, inflow_per_run),
+            use_container_width=True,
+            key="focus",
+        )
     else:
         metric_fn = {
             "active population": charts.population_over_time,
