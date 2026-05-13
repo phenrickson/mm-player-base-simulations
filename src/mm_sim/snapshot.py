@@ -24,6 +24,7 @@ class DailySnapshotWriter:
         self._agg_rows: list[dict] = []
         self._pop_frames: list[pl.DataFrame] = []
         self._match_rows: list[dict] = []
+        self._match_team_rows: list[dict] = []
 
     def record_aggregate(
         self,
@@ -39,6 +40,22 @@ class DailySnapshotWriter:
             lobby_std_arr = np.array([m["lobby_std"] for m in day_matches])
             team_gap_arr = np.array([m["team_gap"] for m in day_matches])
             win_prob_dev_arr = np.array([m["win_prob_dev"] for m in day_matches])
+            fee_arr = np.array(
+                [m.get("favorite_expected_extract", float("nan")) for m in day_matches]
+            )
+
+            def _nan_safe_stats(arr: np.ndarray) -> tuple[float, float, float]:
+                valid = arr[~np.isnan(arr)]
+                if valid.size == 0:
+                    return float("nan"), float("nan"), float("nan")
+                return (
+                    float(valid.mean()),
+                    float(np.percentile(valid, 50)),
+                    float(np.percentile(valid, 90)),
+                )
+
+            _wpd_mean, _wpd_p50, _wpd_p90 = _nan_safe_stats(win_prob_dev_arr)
+            _fee_mean, _fee_p50, _fee_p90 = _nan_safe_stats(fee_arr)
             mq = {
                 "lobby_range_mean": float(lobby_range.mean()),
                 "lobby_range_p50": float(np.percentile(lobby_range, 50)),
@@ -47,9 +64,12 @@ class DailySnapshotWriter:
                 "team_gap_mean": float(team_gap_arr.mean()),
                 "team_gap_p50": float(np.percentile(team_gap_arr, 50)),
                 "team_gap_p90": float(np.percentile(team_gap_arr, 90)),
-                "win_prob_dev_mean": float(np.nanmean(win_prob_dev_arr)),
-                "win_prob_dev_p50": float(np.nanpercentile(win_prob_dev_arr, 50)),
-                "win_prob_dev_p90": float(np.nanpercentile(win_prob_dev_arr, 90)),
+                "win_prob_dev_mean": _wpd_mean,
+                "win_prob_dev_p50": _wpd_p50,
+                "win_prob_dev_p90": _wpd_p90,
+                "favorite_expected_extract_mean": _fee_mean,
+                "favorite_expected_extract_p50": _fee_p50,
+                "favorite_expected_extract_p90": _fee_p90,
             }
         else:
             mq = {
@@ -63,6 +83,9 @@ class DailySnapshotWriter:
                 "win_prob_dev_mean": 0.0,
                 "win_prob_dev_p50": 0.0,
                 "win_prob_dev_p90": 0.0,
+                "favorite_expected_extract_mean": float("nan"),
+                "favorite_expected_extract_p50": float("nan"),
+                "favorite_expected_extract_p90": float("nan"),
             }
 
         active_mask = pop.active
@@ -116,20 +139,22 @@ class DailySnapshotWriter:
         team_true_skills: list[np.ndarray],  # one array per team
         is_blowout: bool,
         winning_team: int,
+        favorite_expected_extract: float | None = None,
     ) -> None:
-        """Append one row describing a single match's quality metrics."""
+        """Append one row describing a single match's quality metrics.
+
+        `favorite_expected_extract` is the extraction-mode analog of
+        `win_prob_dev`: the pre-noise extract probability of the strongest
+        team in the lobby. None/NaN in 2-team mode.
+        """
         lobby_min = float(lobby_true_skills.min())
         lobby_max = float(lobby_true_skills.max())
         lobby_std = float(lobby_true_skills.std())
         lobby_range = lobby_max - lobby_min
 
         team_means = np.array([float(t.mean()) for t in team_true_skills])
-        # Between-team gap: only well-defined for 2 teams. For >2 we take
-        # max - min of team means, which degenerates to the 2-team case.
         team_gap = float(team_means.max() - team_means.min())
 
-        # Expected win probability for the strongest-average team (2-team
-        # lobbies) via Elo-style formula on true_skill space (scale=1).
         if len(team_means) == 2:
             r_a, r_b = team_means[0], team_means[1]
             expected_a = 1.0 / (1.0 + 10.0 ** (r_b - r_a))
@@ -145,6 +170,11 @@ class DailySnapshotWriter:
                 "lobby_std": lobby_std,
                 "team_gap": team_gap,
                 "win_prob_dev": win_prob_dev,
+                "favorite_expected_extract": (
+                    float(favorite_expected_extract)
+                    if favorite_expected_extract is not None
+                    else float("nan")
+                ),
                 "is_blowout": bool(is_blowout),
                 "winning_team": int(winning_team),
             }
@@ -164,6 +194,7 @@ class DailySnapshotWriter:
                 "day": np.full(n, day, dtype=np.int32),
                 "player_id": np.arange(n, dtype=np.int32),
                 "true_skill": pop.true_skill.copy(),
+                "talent_ceiling": pop.talent_ceiling.copy(),
                 "observed_skill": pop.observed_skill.copy(),
                 "experience": pop.experience.copy(),
                 "gear": pop.gear.copy(),
@@ -175,6 +206,7 @@ class DailySnapshotWriter:
                 "recent_blowout_losses": pop.recent_blowout_losses.astype(np.int16),
                 "loss_streak": pop.loss_streak.copy(),
                 "join_day": pop.join_day.copy(),
+                "season_progress": pop.season_progress.copy(),
             }
         )
         self._pop_frames.append(df)
@@ -191,6 +223,58 @@ class DailySnapshotWriter:
         if not self._match_rows:
             return None
         return pl.DataFrame(self._match_rows)
+
+    def record_match_team_detail(
+        self,
+        day: int,
+        match_idx: int,
+        team_idx: int,
+        player_ids: list[int],
+        mean_true_skill_before: float,
+        mean_observed_skill_before: float,
+        mean_gear_before: float,
+        team_strength: float,
+        expected_extract: float,
+        extracted: bool,
+        kills: int,
+        killed_by_team: int,  # -1 if none
+        observed_skill_before: list[float] | None = None,
+        observed_skill_after: list[float] | None = None,
+    ) -> None:
+        """One row per team per match. Captures what the team looked like
+        going into the match and what happened. The before/after observed
+        skill lists align with player_ids for per-player rating delta."""
+        self._match_team_rows.append(
+            {
+                "day": day,
+                "match_idx": match_idx,
+                "team_idx": team_idx,
+                "player_ids": list(player_ids),
+                "mean_true_skill_before": float(mean_true_skill_before),
+                "mean_observed_skill_before": float(mean_observed_skill_before),
+                "mean_gear_before": float(mean_gear_before),
+                "team_strength": float(team_strength),
+                "expected_extract": float(expected_extract),
+                "extracted": bool(extracted),
+                "kills": int(kills),
+                "killed_by_team": int(killed_by_team),
+                "observed_skill_before": (
+                    [float(x) for x in observed_skill_before]
+                    if observed_skill_before is not None
+                    else None
+                ),
+                "observed_skill_after": (
+                    [float(x) for x in observed_skill_after]
+                    if observed_skill_after is not None
+                    else None
+                ),
+            }
+        )
+
+    def match_team_dataframe(self) -> pl.DataFrame | None:
+        if not self._match_team_rows:
+            return None
+        return pl.DataFrame(self._match_team_rows)
 
     # Back-compat alias used by older callers during refactor
     def to_dataframe(self) -> pl.DataFrame:

@@ -1,4 +1,4 @@
-set shell := ["pwsh.exe", "-c"]
+set windows-shell := ["pwsh.exe", "-c"]
 
 _default:
     @just --list
@@ -37,9 +37,7 @@ scenarios:
 
 # list scenario files available to run
 scenarios-list:
-    Get-ChildItem scenarios -Filter *.toml -ErrorAction SilentlyContinue |
-    ForEach-Object { $_.BaseName } `
-    || echo "no scenarios/ directory yet"
+    @uv run python -c "import glob, os, tomllib; names=[]; [names.append(os.path.splitext(os.path.basename(p))[0]) for p in sorted(glob.glob('scenarios/*.toml')) if os.path.basename(p) != 'defaults.toml' and 'sweep' not in tomllib.loads(open(p).read())]; print('\n'.join(names) if names else 'no scenarios/ directory yet')"
 
 # regenerate plots for a saved experiment (latest version by default, or pass --version v2)
 plots NAME *ARGS:
@@ -50,6 +48,23 @@ plots NAME *ARGS:
 compare *ARGS:
     uv run python -m mm_sim.cli compare {{ARGS}}
 
+# run a parameter sweep by name (looks up scenarios/NAME.toml)
+sweep NAME:
+    uv run python -m mm_sim.cli sweep {{NAME}}
+
+# list sweep files available to run
+sweeps-list:
+    @uv run python -m mm_sim.cli sweeps
+
+# regenerate sweep comparison plots (latest version by default, or pass --version v2)
+sweep-compare NAME *ARGS:
+    uv run python -m mm_sim.cli sweep-compare {{NAME}} {{ARGS}}
+
+# overlay a sweep with named reference scenarios, e.g.
+#   just sweep-overlay sweep_mm_skill_weight --reference random_mm
+sweep-overlay NAME *ARGS:
+    uv run python -m mm_sim.cli sweep-overlay {{NAME}} {{ARGS}}
+
 # delete ALL saved experiments (prompts for confirmation)
 clean-experiments:
     @printf "delete everything under experiments/? [y/N] " && read ans && [ "$ans" = "y" ] && rm -rf experiments && echo "deleted." || echo "aborted."
@@ -57,3 +72,7 @@ clean-experiments:
 # refresh the uv lock file
 lock:
     uv lock
+
+# Launch the Streamlit dashboard
+dashboard:
+    uv run streamlit run src/mm_sim/dashboard/app.py

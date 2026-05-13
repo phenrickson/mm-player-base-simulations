@@ -1,7 +1,9 @@
 name = "random_mm"
+category = "matchmaker"
 
-[config.parties]
-size_distribution = {1 = 1.0}
+# No matchmaking at either stage — lower-bound reference.
 
 [config.matchmaker]
 kind = "random"
+lobby_size = 12
+teams_per_lobby = 4

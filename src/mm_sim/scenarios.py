@@ -73,9 +73,15 @@ def _load_defaults_config(scenarios_dir: Path) -> dict:
 def load_season_name(
     scenarios_dir: Path | str = DEFAULT_SCENARIOS_DIR,
 ) -> str:
-    """Return the `season` field from scenarios/defaults.toml.
+    """Compute the season name from scenarios/defaults.toml.
 
-    Raises if defaults.toml doesn't exist or doesn't set `season`.
+    Name format: `{season_days}d-{initial_size}p-{true_skill_distribution}`
+    with an optional `-{season_suffix}` appended. E.g.
+    `90d-15000p-right_skewed-asymmetric-progression`.
+
+    `season_suffix` is the only hand-maintained part (research tag).
+    Literal `season = "..."` is still honored for backwards compatibility
+    and overrides the computed name entirely.
     """
     path = Path(scenarios_dir) / DEFAULTS_FILENAME
     if not path.exists():
@@ -84,12 +90,25 @@ def load_season_name(
             "experiment season"
         )
     raw = tomllib.loads(path.read_text())
-    season = raw.get("season")
-    if not season:
-        raise ValueError(
-            f"{path} is missing the required top-level `season` field"
-        )
-    return str(season)
+
+    literal = raw.get("season")
+    if literal:
+        return str(literal)
+
+    cfg = raw.get("config", {})
+    defaults = SimulationConfig()
+    season_days = cfg.get("season_days", defaults.season_days)
+    pop = cfg.get("population", {})
+    initial_size = pop.get("initial_size", defaults.population.initial_size)
+    distribution = pop.get(
+        "true_skill_distribution", defaults.population.true_skill_distribution
+    )
+
+    name = f"{season_days}d-{initial_size}p-{distribution}"
+    suffix = raw.get("season_suffix")
+    if suffix:
+        name = f"{name}-{suffix}"
+    return name
 
 
 def defaults_toml_path(
@@ -102,6 +121,7 @@ def defaults_toml_path(
 class Scenario:
     name: str
     config: SimulationConfig
+    category: str = "other"
 
     @classmethod
     def from_toml_file(
@@ -113,10 +133,11 @@ class Scenario:
         if "name" not in raw:
             raise ValueError(f"scenario {path} is missing required field 'name'")
         name = raw["name"]
+        category = raw.get("category", "other")
         scenario_config = raw.get("config", {})
         merged = _deep_merge(defaults_config or {}, scenario_config)
         config = SimulationConfig.model_validate(merged)
-        return cls(name=name, config=config)
+        return cls(name=name, config=config, category=category)
 
 
 def load_scenario(
@@ -155,6 +176,9 @@ def load_scenarios_dir(
     for path in sorted(base.glob("*.toml")):
         if path.name == DEFAULTS_FILENAME:
             continue
+        raw = tomllib.loads(path.read_text())
+        if "sweep" in raw:
+            continue  # sweep TOMLs are not scenarios
         scenario = Scenario.from_toml_file(path, defaults_config=defaults_config)
         scenarios[scenario.name] = scenario
     return scenarios
